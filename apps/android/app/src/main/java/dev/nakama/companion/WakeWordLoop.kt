@@ -33,7 +33,7 @@ internal class WakeWordLoop(
                 release(); stalledStarts++
                 if (stalledStarts >= 3) { enabled = false; commandUntil = 0; onStatus("Paused - the recognizer never reported microphone ready. Check free storage and the microphone privacy switch, then restart Nakama.") }
                 else { nextAttempt = now() + 300; onStatus("Restarting a stalled local microphone - attempt ${stalledStarts + 1} of 3") }
-            } else if (endedAt != null && now() - endedAt!! >= 6_000) {
+            } else if (endedAt != null && now() - endedAt!! >= (recognition?.completionTimeoutMillis ?: 6_000L).coerceIn(6_000L, 90_000L)) {
                 val continuous = recognition?.continuousSession == true
                 release(); commandUntil = 0; nextAttempt = now() + 300
                 if (continuous) { enabled = false; onStatus("Paused - no continuous recognition result arrived. Use Talk or restart Nakama; no repeated restart sounds will be generated.") }

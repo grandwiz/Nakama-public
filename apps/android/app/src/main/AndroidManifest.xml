@@ -33,7 +33,7 @@
         </activity>
         <activity android:name=".VoiceEntryActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".FoundationEntryActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <service android:name=".WakeWordService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".WakeWordService" android:stopWithTask="false" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".ProjectPdfService" android:exported="false" android:isolatedProcess="true" android:process=":project_pdf" />
         <service android:name=".DeviceLocationService" android:exported="false" android:foregroundServiceType="location" />
         <receiver android:name=".LocalTimerReceiver" android:exported="false">

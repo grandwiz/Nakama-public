@@ -66,6 +66,27 @@ class RuntimePackagingTest(unittest.TestCase):
             self.assertEqual("../../outside", item.read_text())
             self.assertFalse((root / "outside").exists())
 
+    def test_keyword_timestamp_patch_is_exact_idempotent_and_rejects_changed_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "sherpa-onnx/jni/keyword-spotter.cc"
+            source.parent.mkdir(parents=True)
+            source.write_text("  // Convert timestamps (std::vector<float> -> float[])\n  jfloatArray j_timestamps = env->NewFloatArray(result.timestamps.size());\n")
+            core = root / "sherpa-onnx/csrc/keyword-spotter-transducer-impl.h"
+            core.parent.mkdir(parents=True)
+            core.write_text("  void InitOnlineStream(OnlineStream *stream) const {\n    auto r = decoder_->GetEmptyResult();\n    SHERPA_ONNX_CHECK_EQ(r.hyps.Size(), 1);\n")
+            builder.patch_keyword_timestamps(root)
+            changed = source.read_text()
+            core_changed = core.read_text()
+            self.assertEqual(1, core_changed.count("r.frame_offset = stream->GetKeywordResult().frame_offset;"))
+            self.assertEqual(1, changed.count("timestamp += result.start_time;"))
+            builder.patch_keyword_timestamps(root)
+            self.assertEqual(changed, source.read_text())
+            self.assertEqual(core_changed, core.read_text())
+            source.write_text("unexpected upstream source")
+            with self.assertRaisesRegex(RuntimeError, "context changed"):
+                builder.patch_keyword_timestamps(root)
+
     def test_cache_requires_matching_recipe_and_output_hash(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -7,9 +7,9 @@ The Android companion is an engineering preview. The following results cover loc
 | Check | Result |
 | --- | --- |
 | Production and instrumentation builds | Passed with SDK 36, JDK 17 and the Gradle wrapper. The recorded run used cached dependencies in offline mode. |
-| JVM tests | 136 passed with no failures or errors. |
-| Lint | Zero errors, 37 warnings and two informational hints. |
-| Focused Android 16 instrumentation | 59 passed, including four real bundled-decoder checks using synthetic PCM, plus device isolation, alarms, clocks, voice, app selection, monitoring and visible control. |
+| JVM tests | 158 passed with no failures or errors. |
+| Lint | Zero errors, 38 warnings and two informational hints. |
+| Focused Android 16 instrumentation | 71 passed, including real bundled ASR, keyword and wake handover checks using synthetic PCM, service/playback lifecycle, device isolation, alarms, clocks, voice, app selection, monitoring and visible control. |
 | Crash buffer | Empty after the focused instrumentation run. |
 
 The monitoring fixtures cover paused creation with an exact rule and cadence, revision-bound resume/pause, failed-save draft retention, rejection of delayed responses after access revocation, private browser navigation and generic attention notices. Upgrade fixtures verify that saving a request leaves it held and does not execute a model or installation. Policy tests cover exact-app exclusions, incomplete or sensitive observations, expiry, pairing/configuration changes and navigation restrictions.
@@ -77,3 +77,36 @@ The four native cases load the actual packaged model without opening a microphon
 Initial native tests exposed text from digital silence and a lost word sequence with four decoding paths. Acoustic evidence now blocks silence/DC/click transcripts; eight decoding paths retain the complete request on Android. A controlled comparison isolated beam pruning from endpoint handling. Temporary endpoint delays and diagnostic variants were removed; the final native tests passed with default endpoint timing. Recognition accuracy, real microphone/TTS latency, background survival, battery use and physical timer sound still require owner acceptance.
 
 To reproduce the speech corpus on Windows, run `powershell -File scripts/generate-bundled-speech-fixtures.ps1` from the repository root with the installed Microsoft Hazel Desktop and Zira Desktop voices. This renders files without recording or playing audio. The Android test build stages only its WAVs/manifest from the ignored cache; they are never in the app APK. Build again, install both APKs only on a disposable emulator, and run `dev.nakama.companion.BundledSpeechNativeTest` with the instrumentation command above. Missing fixtures fail that explicit corpus test rather than silently skipping it. No personal phone/tablet was installed or used for testing.
+
+## Separate wake detection and English transcription, build 6 (2026-10-02)
+
+Build 6 bundles Whisper base.en int8, the GigaSpeech 3.3M keyword detector and Silero VAD: nine verified model/config files totalling 175,154,862 bytes. The keyword model alone grants one bounded post-wake request; it does not transcribe ambient conversation. An independent microphone producer keeps capture running during decoding. Overflow and requests exceeding the 20-second audio bound fail without submitting a partial command. Exact command and device-recipient checks remain unchanged.
+
+Final offline JVM/lint/app/test builds passed: **158 JVM tests**, **zero lint errors, 38 warnings and two hints**. The final combined disposable API 36 x86_64 emulator run passed **71/71 tests** in 150 seconds. Its crash buffer was empty and no app service remained after cleanup. The emulator had 2 GiB RAM and four virtual CPU cores; it was not a personal device. Seven Python runtime-packaging tests passed. Independent reviews covered audio bounds and cleanup, wake authority, native timestamps, playback cancellation, service lifecycle, pairing and device isolation.
+
+The native checks use the real packaged models with synthetic PCM, without opening a microphone or executing the recognized timer/app actions:
+
+- The 72-recording British corpus uses Hazel, George and Susan. All 15 basic timer durations, 12 app requests, three time requests, three explicit device destinations, three greetings and three date requests passed strict production parsing/text assertions. All 12 negative examples remained noncommands; all nine conversational requests had zero normalized word error in this corpus.
+- Named-timer phrases were measured separately: **9/12 exact**. All three creation phrases containing the name “tea” had wording/name errors, including “T”. No homophone substitution or fuzzy command aliases hide these misses. Named timers remain a manual speech-quality acceptance item.
+- Silence, DC, quiet noise, hiss and a tone produced no command text. Timer meaning remained correct with 512-, 1,600- and 6,400-sample reads.
+- Eight original wake positives, eight additional short/rate variants, ordinary speech and near-name negatives exercise the dedicated detector and complete wake-to-request handover. Separate wake/request speech, bare wake without an invented command, 12 seconds of idle audio and several read sizes pass. Windows keyword calibration also passed 16 clean positives and 29 negative/acoustic controls; only 12/16 quiet/noisy stress positives were detected. This calibration does not establish noisy physical-device reliability.
+- Real foreground-service tests use fake audio and confirm Home/Recents survival, notification Stop, late-callback suppression and playback cleanup after completion, cancellation or timeout. Physical microphone capture and vendor battery behavior remain separate acceptance.
+
+Among 75 spoken decodes, warm median inference was **752 ms**, warm maximum **1,181 ms**. The first request took **2,187 ms** including preparation, with model loading accounting for 786 ms of its 1,599 ms inference path. These are emulator measurements excluding real speaking time, endpoint wait, TTS and host/model work. Sampled process PSS was about 417–484 MiB under instrumentation, not a measured peak or a phone benchmark.
+
+The first combined run passed 68/71 and exposed short wake requests decoded as only “What”. Controlled native diagnostics showed sensitivity to excess surrounding silence. The corrected endpoint still waits about 608 ms, but passes only 192 ms of confirmed trailing quiet to Whisper. Pre-roll is capped at 160 ms; a separate bug that retained oversized audio after rejected short fragments now contracts and zeroes that buffer. Tests preserve quiet word beginnings, internal pauses and manual partial-frame finishes, and repeat 500 rejected fragments without buffer growth. The original strict failing handover assertions now pass. An earlier idle test also caught native keyword timestamps resetting after silence; the source-built runtime now preserves the frame counter and exposes absolute stream time through JNI. No acoustic weights or command permissions changed to resolve either defect.
+
+APK verification checked versionCode 6, dev.nakama.companion, Android 15+, arm64-v8a/x86_64 and the unchanged local debug certificate. All nine model hashes and 24 indexed notice/provenance records match source. The four speech libraries match the rebuilt ASR-only runtime; those libraries and AndroidX graphics libraries pass 16 KB ELF/ZIP alignment. No synthetic WAVs, old model vocabulary or test fixtures are present in the application APK. Both package-integrity scripts passed; the Windows installer is unchanged from the earlier routing preview. APKs, model weights, recordings and diagnostic logs remain ignored local outputs.
+
+To reproduce the native fixtures on Windows, use the installed offline Microsoft Hazel Desktop, Zira Desktop, George and Susan voices:
+
+```powershell
+powershell -File scripts/generate-bundled-speech-fixtures.ps1
+powershell -File scripts/generate-wake-handover-fixtures.ps1
+powershell -File scripts/generate-bundled-command-fixtures.ps1
+python scripts/test-bundled-speech-runtime.py
+```
+
+Rebuild both APKs, verify the exact disposable emulator serial as above, and install both there. Add `BundledSpeechNativeTest`, `BundledKeywordSpotterTest`, `BundledWakeNativeTest`, `WakeReplyPlaybackTest` and `WakeServiceLifecycleTest` (each prefixed `dev.nakama.companion.`) to the focused instrumentation class list. Missing fixture assets fail the native tests. The optional Windows model-comparison helper is exploratory; its approximate metrics do not replace the strict Android parser checks.
+
+Install over the existing matching-signature app, then reopen it and check **Tools → Wake word → Restart wake listening → Microphone ready**. The [Android guide](../../docs/android-guide.md#optional-local-nakama-wake-word) includes battery settings. Home/Recents dismissal is supported while unlocked; force-stop/reboot require reopening. Locked-device listening, uninterrupted vendor background survival, real British-accent accuracy, microphone/TTS latency, battery use and physical alarm/app outcomes remain owner acceptance. No physical installation, live assistant/provider call or paid inference was performed. Public production-release gates remain open.

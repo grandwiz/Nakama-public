@@ -18,12 +18,12 @@
       "bytes": 516438
     },
     {
-      "file": "BPE-VOCABULARY-PROVENANCE.md",
-      "component": "Derived BPE vocabulary and Nakama hotword configuration",
-      "version": "English Zipformer 2023-06-26",
-      "source": "apps/android/app/src/main/speech-config/README.md",
-      "sha256": "9fa3739c7aaef5860bd4c3fa62873bdcdfe001c2b2d6bdfbf4f5c767e33fc74e",
-      "bytes": 1779
+      "file": "CONVERSATION-MODEL-PROVENANCE.md",
+      "component": "Nakama conversation-model provenance",
+      "version": "Whisper base.en + Silero VAD",
+      "source": "apps/android/bundled-speech.gradle.kts",
+      "sha256": "3dc3b8ffac9dc33bd06abb804828f43f69074cd8dbaadd34b532f96b85410afa",
+      "bytes": 2236
     },
     {
       "file": "EIGEN-COPYING.APACHE.txt",
@@ -122,12 +122,20 @@
       "bytes": 246
     },
     {
-      "file": "MODEL-README.md",
-      "component": "English streaming Zipformer model",
-      "version": "2023-06-26 / 672fbf1b30579d6585301139bb363f42a0ad4a24",
-      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/raw/672fbf1b30579d6585301139bb363f42a0ad4a24/README.md",
-      "sha256": "c914dd28e23310a6dd345ea10495003d3e4820d2ed987181e4c2d67e501b6b76",
-      "bytes": 216
+      "file": "KWS-MODEL-README.md",
+      "component": "Sherpa English keyword model",
+      "version": "2024-01-01",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2!/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/README.md",
+      "sha256": "74e42d37d63acd2366b042151d576fcc0c4917a41de339414a37f1e79f4e80e2",
+      "bytes": 726
+    },
+    {
+      "file": "KWS-PROVENANCE.md",
+      "component": "Nakama keyword configuration provenance",
+      "version": "2024-01-01 model",
+      "source": "apps/android/app/src/main/speech-config/README.md",
+      "sha256": "e62a94355b346747589e7997f114a816815da1d6a4aac3b762c5818d42ae8808",
+      "bytes": 3377
     },
     {
       "file": "ONNXRUNTIME-LICENSE.txt",
@@ -162,12 +170,28 @@
       "bytes": 11358
     },
     {
+      "file": "SILERO-VAD-LICENSE.txt",
+      "component": "Silero VAD",
+      "version": "License snapshot 1e261b036686cd0017d500ee96acd1c4ba572a9d",
+      "source": "https://raw.githubusercontent.com/snakers4/silero-vad/1e261b036686cd0017d500ee96acd1c4ba572a9d/LICENSE",
+      "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+      "bytes": 1075
+    },
+    {
       "file": "SIMPLE-SENTENCEPIECE-LICENSE.txt",
       "component": "simple-sentencepiece",
       "version": "0.7",
       "source": "https://github.com/pkufool/simple-sentencepiece/blob/v0.7/LICENSE",
       "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
       "bytes": 11357
+    },
+    {
+      "file": "WHISPER-LICENSE.txt",
+      "component": "OpenAI Whisper",
+      "version": "License snapshot 86098128c0b4f24f0e2aa2994de830614b474227",
+      "source": "https://raw.githubusercontent.com/openai/whisper/86098128c0b4f24f0e2aa2994de830614b474227/LICENSE",
+      "sha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d",
+      "bytes": 1063
     }
   ]
 }

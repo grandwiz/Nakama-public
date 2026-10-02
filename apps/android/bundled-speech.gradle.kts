@@ -6,14 +6,20 @@ import java.security.MessageDigest
 import groovy.json.JsonOutput
 
 // Pinned build-time downloads only. Recognition has no runtime download or network fallback.
-val modelId = "sherpa-onnx-streaming-zipformer-en-2023-06-26"
-val modelRevision = "672fbf1b30579d6585301139bb363f42a0ad4a24"
+val modelId = "sherpa-onnx-whisper-base.en"
+val modelRevision = "59eea950fc76df2453efb57e6c0fd334548e8ffe"
 val modelUrl = "https://huggingface.co/csukuangfj/$modelId/resolve/$modelRevision"
 val modelFiles = mapOf(
-    "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx" to "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1",
-    "decoder-epoch-99-avg-1-chunk-16-left-128.onnx" to "7bf787f90b194b307e5a4ad6a34fadb4e748304c35f78a8d66358a05b13ee6ef",
-    "joiner-epoch-99-avg-1-chunk-16-left-128.onnx" to "210591f72b3c56b8364f85f345dca240bc2b4c00632848f4aa923630d5639d3b",
-    "tokens.txt" to "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb",
+    "base.en-encoder.int8.onnx" to "ef6b936f4c9b1d90a3b68634b60c4ed8576b26172b33c2535ec0e933c9edb823",
+    "base.en-decoder.int8.onnx" to "f7162ad6db2dbef16cfaeaa7f945b9d7dd9c1b8d472f6aca82f2273d185e4d41",
+    "base.en-tokens.txt" to "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930",
+)
+val wakeId = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+val wakeFiles = mapOf(
+    "encoder-epoch-12-avg-2-chunk-16-left-64.onnx" to "063fbc1aeae8a9b574607a331a00e60371846ef9eaa3c1d9ea48176665dfc693",
+    "decoder-epoch-12-avg-2-chunk-16-left-64.onnx" to "f61ebd3eed3773a44d088d53dfae92dbb6aec4839f4dcaee2d402414741663a3",
+    "joiner-epoch-12-avg-2-chunk-16-left-64.onnx" to "0d7a37e749d8055223029318d6ffae82db1dae2d315d0892a68ba5dad17c1d2d",
+    "tokens.txt" to "fd2ded4050a55d2b1578870ba8697d02371980217806b7558bd0a5cc60f3ba53",
 )
 val runtimeVersion = "1.13.8"
 val runtimeName = "sherpa-onnx-$runtimeVersion-asr-only.aar"
@@ -78,7 +84,19 @@ tasks.register("prepareBundledSpeechModel") {
     inputs.dir(project.file("src/main/speech-config"))
     outputs.dir(speechAssets)
     doLast {
-        val verifiedFiles = modelFiles.mapValues { (name, hash) -> pinnedDownload("$modelId/$name", "$modelUrl/$name", hash, 96L * 1024 * 1024) }
+        val verifiedFiles = modelFiles.mapValues { (name, hash) -> pinnedDownload("$modelId/$name", "$modelUrl/$name", hash, 256L * 1024 * 1024) }
+        val wakeArchive = pinnedDownload("$wakeId.tar.bz2",
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/$wakeId.tar.bz2",
+            "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a", 32L * 1024 * 1024)
+        val wakeTree = project.tarTree(project.resources.bzip2(wakeArchive))
+        val verifiedWake = wakeFiles.mapValues { (name, hash) ->
+            wakeTree.matching { include("$wakeId/$name") }.singleFile.also {
+                check(sha256(it) == hash) { "Bundled keyword file checksum mismatch." }
+            }
+        }
+        val vad = pinnedDownload("silero_vad.onnx",
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+            "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", 1024L * 1024)
         val output = speechAssets.get().asFile.canonicalFile
         val buildRoot = layout.buildDirectory.get().asFile.canonicalFile
         check(output.toPath().startsWith(buildRoot.toPath()) && output != buildRoot) { "Generated assets must stay inside this app's build directory." }
@@ -86,21 +104,25 @@ tasks.register("prepareBundledSpeechModel") {
         val modelRoot = File(output, "speech-model/model").apply { mkdirs() }
         val records = mutableListOf<Map<String, Any>>()
         fun record(name: String, target: File) {
-            check(target.length() <= 96L * 1024 * 1024) { "Bundled speech file exceeds its size limit." }
+            check(target.length() <= 256L * 1024 * 1024) { "Bundled speech file exceeds its size limit." }
             records += mapOf("path" to name, "bytes" to target.length(), "sha256" to sha256(target))
         }
         for ((name, file) in verifiedFiles) {
             val target = File(modelRoot, name)
             file.copyTo(target); record(name, target)
         }
-        for (name in listOf("bpe.vocab", "hotwords.txt")) {
-            val target = File(modelRoot, name)
-            project.file("src/main/speech-config/$name").copyTo(target)
-            record(name, target)
+        for ((name, file) in verifiedWake) {
+            val target = File(modelRoot, "wake/$name").apply { parentFile.mkdirs() }
+            file.copyTo(target); record("wake/$name", target)
         }
+        val keywords = File(modelRoot, "wake/keywords.txt")
+        project.file("src/main/speech-config/wake-keywords.txt").copyTo(keywords)
+        record("wake/keywords.txt", keywords)
+        val vadTarget = File(modelRoot, "silero_vad.onnx")
+        vad.copyTo(vadTarget); record("silero_vad.onnx", vadTarget)
         File(output, "speech-model/manifest.json").writeText(JsonOutput.prettyPrint(JsonOutput.toJson(mapOf(
-            "id" to modelId, "sourceRevision" to modelRevision, "source" to modelUrl,
-            "license" to "Apache-2.0", "files" to records.sortedBy { it["path"].toString() }
+            "id" to "nakama-speech-base-en-kws-v2", "sourceRevision" to modelRevision, "source" to modelUrl,
+            "license" to "MIT (Whisper, Silero); Apache-2.0 (KWS)", "files" to records.sortedBy { it["path"].toString() }
         ))) + "\n")
         project.copy { from(project.file("src/main/speech-notices")); into(File(output, "speech-model/notices")) }
         logger.lifecycle("Bundled offline English model: " + modelId + " (" + records.size + " verified files)")
@@ -111,8 +133,16 @@ tasks.register("prepareBundledSpeechModel") {
 // Never copied into the application APK; missing fixtures fail the explicit native corpus test.
 val speechTestAudio = rootProject.projectDir.resolve("../../.cache/bundled-speech/audio")
 val prepareSpeechTestAudio = tasks.register<Sync>("prepareBundledSpeechTestAudio") {
-    from(speechTestAudio) { include("*.wav", "manifest.json") }
+    from(speechTestAudio) { include("*.wav", "manifest.json", "kws-extra/*.wav", "kws-extra/manifest.json", "kws-trimmed/*.wav", "kws-trimmed/manifest.json", "wake-handover/*.wav", "wake-handover/manifest.json") }
     into(layout.buildDirectory.dir("generated/speechTestAssets/speech-fixtures"))
     onlyIf { speechTestAudio.isDirectory }
 }
 tasks.matching { it.name == "preDebugAndroidTestBuild" }.configureEach { dependsOn(prepareSpeechTestAudio) }
+
+val commandTestAudio = rootProject.projectDir.resolve("../../.cache/bundled-speech/command-quality")
+val prepareCommandTestAudio = tasks.register<Sync>("prepareBundledCommandTestAudio") {
+    from(commandTestAudio) { include("*.wav", "manifest.json") }
+    into(layout.buildDirectory.dir("generated/speechTestAssets/command-fixtures"))
+    onlyIf { commandTestAudio.isDirectory }
+}
+tasks.matching { it.name == "preDebugAndroidTestBuild" }.configureEach { dependsOn(prepareCommandTestAudio) }

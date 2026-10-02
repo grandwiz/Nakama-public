@@ -23,6 +23,6 @@ logs or reports into source. Keep Kling disabled unless explicitly enabled by
 the installation owner; every generation still requires its own approval.
 Preserve origin-scoped device delivery, explicit remote app/timer targets, multi-device
 alarm receipts and browser-wide ordinary-tab sessions. Read docs/device-routing.md.
-Preserve bundled offline Android speech, exact wake matching and origin-scoped delivery. Read docs/android-guide.md and apps/android/VERIFICATION.md before changing speech. Use synthetic audio and disposable emulators for recognition checks; model weights and local APKs stay out of Git.
+Preserve build 6 bundled offline Android speech: dedicated keyword detection, Whisper base.en request transcription, bounded independent audio capture, exact command authority and origin-scoped delivery. Read docs/android-guide.md and apps/android/VERIFICATION.md before changing speech. Keep wake opt-in, Stop, unlock and pairing checks. Use synthetic audio and disposable emulators for recognition checks; model weights and local APKs stay out of Git. Physical British-accent quality and background/battery behavior remain owner acceptance.
 Report actual tests, remaining acceptance and installed-version evidence honestly.
 ```

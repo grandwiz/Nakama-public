@@ -26,6 +26,7 @@ internal class BundledSpeechRecognition(
     }
     override val continuousSession = continuous
     override val startupTimeoutMillis = 60_000L
+    override val completionTimeoutMillis = 60_000L
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var closed = false
@@ -39,14 +40,20 @@ internal class BundledSpeechRecognition(
     }
     private val session = BundledRecognitionSession(
         continuous = continuous,
-        decoderFactory = { BundledNativeDecoders.open(appContext) },
-        audioFactory = { BundledMicrophone() },
+        decoderFactory = { if (continuous) BundledWakeDecoders.open(appContext) else BundledNativeDecoders.open(appContext) },
+        audioFactory = { BufferedBundledAudio(BundledMicrophone(), launch = { work ->
+            thread(name = "Nakama microphone capture", isDaemon = true) {
+                runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
+                work()
+            }
+        }) },
         worker = { work -> thread(name = "Nakama bundled speech", isDaemon = true, block = work) },
         post = { callback -> handler.post { callback() } },
         now = SystemClock::elapsedRealtime,
         ready = { diagnostic("Bundled offline English is ready. Speech audio stays on this device."); onReady(); if (!closed) readyObserver() },
         ended = { onEnd(); if (!closed) endObserver() },
         result = onResult,
+        processing = { diagnostic("Recognizing your request offline. Audio stays on this device."); onEnd(); if (!closed) endObserver() },
         partial = { partialObserver(it) },
         failure = { code -> diagnostic(LocalRecognitionPolicy.error(code)); onError(code) },
     )
@@ -66,7 +73,7 @@ internal class BundledSpeechRecognition(
     }
 }
 
-/** One live PCM buffer goes directly to the local decoder. No OS SpeechRecognizer or audio files. */
+/** The dedicated capture thread drains AudioRecord; no OS SpeechRecognizer or audio files. */
 private class BundledMicrophone : BundledAudio {
     companion object { const val SAMPLE_RATE = 16_000 }
     @Volatile private var input: AudioRecord? = null
@@ -79,7 +86,7 @@ private class BundledMicrophone : BundledAudio {
         if (stopped) return
         val recorder = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
             .setAudioFormat(AudioFormat.Builder().setSampleRate(SAMPLE_RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build())
-            .setBufferSizeInBytes(maxOf(minimum, 6_400)).build().also { input = it }
+            .setBufferSizeInBytes(maxOf(minimum, 32_000)).build().also { input = it }
         check(recorder.state == AudioRecord.STATE_INITIALIZED) { "Android microphone could not initialize." }
         if (stopped) return
         recorder.startRecording()

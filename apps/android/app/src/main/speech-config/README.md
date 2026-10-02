@@ -1,29 +1,35 @@
-# Bundled speech vocabulary
+# Bundled wake keyword configuration
 
-`bpe.vocab` is the 500-piece vocabulary exported without changing the pieces or
-scores from the publisher's `bpe.model` for the English streaming Zipformer model.
-The original model is Apache-2.0 licensed. This is text configuration, not a
-recording or a set of model weights.
+`wake-keywords.txt` contains only the exact names `NAKAMA` and `HEY NAKAMA`,
+encoded with the publisher's English GigaSpeech 3.3M keyword model vocabulary.
+The labels `NAKAMA` and `HEY_NAKAMA` identify those two phrases. There are no
+phonetic aliases or replacement rules for similar words in a user's request.
 
-Source: https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/bpe.model
-Source SHA-256: `c53433de083c4a6ad12d034550ef22de68cec62c4f58932a7b6b8b2f1e743fa5`
-Vocabulary SHA-256: `f191a4935f668fa8cd8e607bcd378404f948321cd3134a5ea13d324ba921673d`
+The dedicated Sherpa KeywordSpotter uses the FP32 model, 16 kHz mono PCM,
+80 feature bins, one CPU inference thread, eight active paths, keyword score
+1.5, acoustic thresholds 0.25 for `NAKAMA` and 0.20 for the longer
+`HEY NAKAMA`, and two trailing blank frames. Keyword detection
+is separate from the on-demand conversation transcription model.
 
-To reproduce using the publisher's supported method, install SentencePiece in a
-separate build environment and run the tagged exporter:
-https://github.com/k2-fsa/sherpa-onnx/blob/v1.13.8/scripts/export_bpe_vocab.py
+Keyword file SHA-256:
+`45398b856e336eada8acdc69fc2791e6cc8690e729f4ef721be7ad5fc350a26b`
 
-It emits each piece and its float32 score, separated by one tab, in model order.
-The equivalent export used here read the ModelProto `pieces` messages (piece=1,
-score=2), wrote UTF-8 with LF line endings, and verified all 500 pieces against
-the model's token table. No SentencePiece library is required at app runtime or
-for an ordinary Nakama build because the small derived vocabulary is checked in.
+The exact model source, archive hash, tokenizer derivation and primary links are
+recorded in `../speech-notices/KWS-PROVENANCE.md`. Ordinary Android builds use
+the checked-in keyword text; they need no SentencePiece package or runtime
+model download. The APK includes its verified model files.
 
-`hotwords.txt` provides contextual bias for the exact name, not spelling aliases.
-Use `modified_beam_search`, `modelingUnit=bpe`, `maxActivePaths=8`, and
-`hotwordsScore=3.0`. Recognition can still make errors; only finalized words
-matching the ordinary strict wake rule can submit a request.
+The source-built runtime preserves the token clock when keyword history resets
+after silence. JNI exposes absolute keyword timestamps by also including the
+native segment offset, preserving their meaning throughout a long idle stream. This small integration change is recorded in the runtime
+build recipe and provenance. No acoustic model weights or thresholds are
+modified by that patch.
 
-The offline fixture generator is `scripts/generate-bundled-speech-fixtures.ps1`.
-Its outputs stay in ignored `.cache/bundled-speech/audio`. An expected wake flag
-labels the spoken input; it must not be interpreted as a recognition test pass.
+`scripts/generate-bundled-speech-fixtures.ps1` renders development-only British
+and US fixtures using installed offline desktop voices. Outputs remain in
+ignored `.cache/bundled-speech/audio`, including a separate `kws-extra` set of
+near-word negatives. No microphone, playback, account, or network inference is
+used. `scripts/generate-wake-handover-fixtures.ps1` adds short requests and
+faster/slower speaking rates in a separate ignored `wake-handover` directory.
+A synthetic fixture pass does not establish accuracy for every voice,
+accent, distance, noise level, or Android microphone.

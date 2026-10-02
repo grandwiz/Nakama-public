@@ -37,6 +37,7 @@ internal interface VoicePlayback {
 internal interface VoiceRecognition {
     val continuousSession: Boolean get() = false
     val startupTimeoutMillis: Long get() = 8_000L
+    val completionTimeoutMillis: Long get() = 6_000L
     fun start()
     fun close()
     fun stopListening() {}

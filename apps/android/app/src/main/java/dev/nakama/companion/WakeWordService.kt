@@ -18,6 +18,7 @@ class WakeWordService : Service() {
         var running by mutableStateOf(false); private set
         var status by mutableStateOf("Off"); private set
         var foregroundCommand: ((String) -> Unit)? = null
+        internal var recognitionFactoryForTest: (((String) -> Unit, (Int) -> Unit) -> VoiceRecognition)? = null
         internal var continueReplies: ((HostIdentity, List<JSONObject>) -> Boolean)? = null
         internal var stopReply: (() -> Unit)? = null
         internal var discardWorkflow: ((String) -> Unit)? = null
@@ -37,9 +38,13 @@ class WakeWordService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { getSharedPreferences("nakama_preferences", MODE_PRIVATE).edit().putBoolean("wakeEnabled", false).apply(); stopped = true; status = "Off"; stopSelf(); return START_NOT_STICKY }
+        // A system restart may have no Intent. Only the saved, explicit opt-in can revive it.
+        if (!getSharedPreferences("nakama_preferences", MODE_PRIVATE).getBoolean("wakeEnabled", false)) {
+            stopped = true; status = "Off"; stopSelf(); return START_NOT_STICKY
+        }
         if (loop != null) {
             if (intent?.action == "RESTART") { continuations.clear(); conversation?.cancel(); voice?.stop(); loop?.stop(); loop = createWakeLoop().also { it.start() } }
-            return START_NOT_STICKY
+            return START_STICKY
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED || !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { status = "Unavailable · allow microphone and notifications"; stopSelf(); return START_NOT_STICKY }
         val manager = getSystemService(NotificationManager::class.java)
@@ -74,11 +79,11 @@ class WakeWordService : Service() {
                 delay(200)
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
     private fun createWakeLoop(): WakeWordLoop {
         val services = AndroidVoiceServices(this)
-        return WakeWordLoop(SystemClock::elapsedRealtime, { result, failure -> services.wakeRecognition(result, failure) }, { if (conversation?.isActive != true) status = it }, ::heard)
+        return WakeWordLoop(SystemClock::elapsedRealtime, { result, failure -> recognitionFactoryForTest?.invoke(result, failure) ?: services.wakeRecognition(result, failure) }, { if (conversation?.isActive != true) status = it }, ::heard)
     }
     private fun heard(command: String) {
         if (!running || stopped || !unlocked || conversation?.isActive == true) return
@@ -179,8 +184,7 @@ class WakeWordService : Service() {
         if (!running || stopped || !unlocked || (activeIdentity != null && PairingVault(this).load() != activeIdentity)) return
         if (!output.ready) { status = "Unavailable · add an offline British English voice in Nakama Settings"; handoff(); return }
         output.speak(text)
-        withTimeoutOrNull(180_000) { while (!output.replyPlaybackAvailable && running && !stopped && unlocked) delay(100) }
-        if (!unlocked) output.stop()
+        awaitWakeReply(output, { running && !stopped && unlocked })
     }
     private suspend fun syncAlarms(saved: HostIdentity, snapshot: JSONObject, current: () -> Boolean) {
         val permitted = snapshot.objects("devices").firstOrNull { it.optString("id") == saved.deviceId }?.optJSONObject("permissions")?.opt("projectAccess") != false

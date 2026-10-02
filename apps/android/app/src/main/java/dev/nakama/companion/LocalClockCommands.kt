@@ -23,12 +23,12 @@ object LocalClockCommands {
     private val tens = mapOf("twenty" to 20, "thirty" to 30, "forty" to 40, "fifty" to 50, "sixty" to 60, "seventy" to 70, "eighty" to 80, "ninety" to 90)
     fun parse(input: String): LocalClockCommand? {
         if (input.length > 500) return null
-        val value = input.trim().lowercase(Locale.ROOT).replace('’', '\'')
+        val value = input.trim().lowercase(Locale.ROOT).replace('\u2019', '\'')
             .replace(Regex("^(?:hey\\s+)?nakama[,:.!?]?\\s+"), "")
             .removePrefix("please ").trimEnd('.', '!', '?').removeSuffix(" please").trim()
-        if (value in setOf("hello", "hi", "hey", "hello nakama", "hi nakama", "good morning", "good afternoon", "good evening", "how are you", "hello how are you", "hi how are you")) return LocalClockCommand.Greeting
+        if (value in setOf("hello", "hi", "hey", "hello nakama", "hi nakama", "good morning", "good afternoon", "good evening", "how are you", "hello how are you", "hi how are you", "hello, how are you", "hi, how are you")) return LocalClockCommand.Greeting
         if (value in setOf("what time is it", "what time is it now", "what's the time", "what is the time", "tell me the time", "tell me what time it is", "current time", "time")) return LocalClockCommand.Time
-        if (value in setOf("what's the date", "what is the date", "what is today's date", "what's today's date", "what day is it", "what day is it today", "today's date")) return LocalClockCommand.Date
+        if (value in setOf("what's the date", "what is the date", "what is the date today", "what is today's date", "what's today's date", "what day is it", "what day is it today", "today's date")) return LocalClockCommand.Date
         if (value in setOf("open clock", "show clock", "open the clock", "open timers", "show timers", "open my timers")) return LocalClockCommand.Open
         if (value in setOf("list timers", "list my timers", "show my timers", "how much time is left", "how long is left", "how much time is left on my timer", "how much time is left on the timer", "timer status")) return LocalClockCommand.ListTimers()
         Regex("^(?:how much time|how long) is left on (?:the |my )?(.+?) timer$").matchEntire(value)?.let {

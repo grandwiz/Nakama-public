@@ -739,6 +739,7 @@ open class MainActivity : ComponentActivity() {
                 LocalTimers.prepareNotifications(this)
                 startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName).putExtra(Settings.EXTRA_CHANNEL_ID, LocalTimers.ALERT_CHANNEL))
             }
+            "wake_app_settings" -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
             "start_wake", "restart_wake" -> {
                 if (!foreground) { notice = "Open Nakama to enable wake listening."; return }
                 if (missing(Manifest.permission.RECORD_AUDIO) || missing(Manifest.permission.POST_NOTIFICATIONS)) {

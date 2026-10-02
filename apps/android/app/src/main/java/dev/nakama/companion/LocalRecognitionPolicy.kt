@@ -5,6 +5,8 @@ internal object LocalRecognitionPolicy {
         -200 -> "The bundled English model is missing or damaged. Install a complete Nakama update; no model download is needed in Android settings."
         -201 -> "Bundled speech could not initialize. Check free storage and restart Nakama. Audio was not sent to another recognition service."
         -202 -> "Bundled speech could not capture microphone audio. Close other microphone apps, check microphone permission and the system privacy switch, then retry."
+        -203 -> "Speech capture fell behind. Your request was discarded; please repeat it. No partial request was sent."
+        -204 -> "Your spoken request exceeded 20 seconds and was discarded. Please use a shorter request."
         -100 -> "The continuous audio session ended unexpectedly. Quiet wake listening is unsupported in this session; restart Nakama or use Talk. Nakama will not restart it repeatedly or mute device sounds."
         1, 2 -> "The optional Android recognition service reported a connection error ($error). You can use bundled offline recognition or type; no service switch was made."
         3 -> "Android could not capture microphone audio (3). Close other microphone apps and check the system microphone privacy switch."

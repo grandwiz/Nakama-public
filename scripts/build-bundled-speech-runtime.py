@@ -38,7 +38,7 @@ def sha(path):
 
 
 def recipe():
-    return {"schema": 1, "engine": VERSION, "ndk": NDK_VERSION, "cmake": CMAKE_VERSION, "abis": list(ABIS), "inputs": INPUTS, "flags": FLAGS, "builderSha256": sha(Path(__file__))}
+    return {"schema": 1, "engine": VERSION, "ndk": NDK_VERSION, "cmake": CMAKE_VERSION, "abis": list(ABIS), "inputs": INPUTS, "flags": FLAGS, "builderSha256": sha(Path(__file__)), "modifications": {"keywordJniTimestamps": "absolute-stream-time-v2"}}
 
 
 def verified_cache():
@@ -85,6 +85,32 @@ def extract(source_zip, target):
                 data = archive.read(info)
                 if not dest.exists() or dest.read_bytes() != data:
                     dest.write_bytes(data)
+
+
+def patch_keyword_timestamps(source):
+    """Keep token time absolute through KWS state resets and Kotlin result mapping.
+
+    KWS resets its decoder history after silence, without resetting the feature
+    stream. Preserve only its timestamp counter. The exposed Kotlin timestamp
+    also includes the native segment offset that its result class omits.
+    """
+    jni_original = "  // Convert timestamps (std::vector<float> -> float[])\n  jfloatArray j_timestamps = env->NewFloatArray(result.timestamps.size());"
+    jni_changed = "  // Nakama: Kotlin omits start_time; expose absolute stream timestamps.\n  for (auto &timestamp : result.timestamps) {\n    timestamp += result.start_time;\n  }\n" + jni_original
+    core_original = "  void InitOnlineStream(OnlineStream *stream) const {\n    auto r = decoder_->GetEmptyResult();\n    SHERPA_ONNX_CHECK_EQ(r.hyps.Size(), 1);"
+    core_changed = "  void InitOnlineStream(OnlineStream *stream) const {\n    auto r = decoder_->GetEmptyResult();\n    // Nakama: KWS state resets must not restart the absolute token clock.\n    r.frame_offset = stream->GetKeywordResult().frame_offset;\n    SHERPA_ONNX_CHECK_EQ(r.hyps.Size(), 1);"
+    for relative, original, changed in (
+        ("sherpa-onnx/jni/keyword-spotter.cc", jni_original, jni_changed),
+        ("sherpa-onnx/csrc/keyword-spotter-transducer-impl.h", core_original, core_changed),
+    ):
+        path = source / relative
+        text = path.read_text(encoding="utf-8")
+        if changed in text:
+            if text.count(changed) != 1:
+                raise RuntimeError("Unexpected duplicated keyword timestamp patch")
+            continue
+        if text.count(original) != 1:
+            raise RuntimeError("Pinned keyword source context changed; refusing to guess a patch")
+        path.write_text(text.replace(original, changed, 1), encoding="utf-8", newline="\n")
 
 
 def elf_metadata(data):
@@ -155,6 +181,7 @@ def main():
     source = native / f"sherpa-onnx-{VERSION}"
     # Re-extract the hash-checked upstream source, including upstream Android patches applied at configure time.
     extract(source_zip, native)
+    patch_keyword_timestamps(source)
     shutil.copyfile(ort_zip, source / INPUTS["onnxruntime"]["file"])
     payload, library_info = {}, {}
     with zipfile.ZipFile(original_aar) as original:

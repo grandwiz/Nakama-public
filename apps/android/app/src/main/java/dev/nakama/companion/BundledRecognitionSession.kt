@@ -2,6 +2,8 @@ package dev.nakama.companion
 
 /** Native decoding and microphone operations have one worker owner and an injectable test boundary. */
 internal interface BundledDecoder {
+    val speechStarted: Boolean get() = false
+    val decodingRequired: Boolean get() = false
     fun accept(samples: ShortArray, count: Int): Boolean
     fun result(): String
     fun partial(): String
@@ -11,6 +13,7 @@ internal interface BundledDecoder {
 internal interface BundledAudio {
     fun start()
     fun read(samples: ShortArray): Int
+    fun checkHealthy() {}
     /** Must unblock read without waiting for the worker to join. */
     fun stop()
     fun close()
@@ -19,6 +22,8 @@ internal object BundledSpeechError {
     const val MODEL_UNAVAILABLE = -200
     const val ENGINE_FAILURE = -201
     const val AUDIO_FAILURE = -202
+    const val CAPTURE_OVERFLOW = -203
+    const val REQUEST_TOO_LONG = -204
     const val PERMISSION = 9
     const val NO_SPEECH = 6
 }
@@ -36,6 +41,7 @@ internal class BundledRecognitionSession(
     private val result: (String) -> Unit,
     private val partial: (String) -> Unit,
     private val failure: (Int) -> Unit,
+    private val processing: () -> Unit = {},
     private val idle: () -> Unit = { Thread.sleep(10) },
 ) {
     private val lock = Any()
@@ -72,7 +78,14 @@ internal class BundledRecognitionSession(
     }
     private fun finalText(text: String) {
         val bounded = text.trim().take(24_000)
-        if (bounded.isNotBlank()) deliver { ended(); if (!closed) result(bounded) }
+        val capture = synchronized(lock) { audio }
+        if (bounded.isNotBlank()) deliver {
+            try { capture?.checkHealthy() }
+            catch (_: BundledCaptureOverflow) { failure(BundledSpeechError.CAPTURE_OVERFLOW); return@deliver }
+            catch (_: SecurityException) { failure(BundledSpeechError.PERMISSION); return@deliver }
+            catch (_: Exception) { failure(BundledSpeechError.AUDIO_FAILURE); return@deliver }
+            ended(); if (!closed) result(bounded)
+        }
         else if (!continuous) deliver { failure(BundledSpeechError.NO_SPEECH) }
     }
     private fun run() {
@@ -94,7 +107,7 @@ internal class BundledRecognitionSession(
             // A source must honor stop before/during start; readiness is checked again afterward.
             if (canStart) source.start()
             if (closed) return
-            if (!canStart || finishing) { errorCode = BundledSpeechError.ENGINE_FAILURE; finalText(decoder.finish()); return }
+            if (!canStart || finishing) { errorCode = BundledSpeechError.ENGINE_FAILURE; finalText(decoder.finish().also { source.checkHealthy() }); return }
             deliver(ready)
             val began = now()
             var lastPartial = ""
@@ -109,7 +122,9 @@ internal class BundledRecognitionSession(
                 else {
                     errorCode = BundledSpeechError.ENGINE_FAILURE
                     if (decoder.accept(samples, count)) {
+                        if (decoder.decodingRequired) deliver(processing)
                         val text = decoder.result().trim().take(24_000)
+                        source.checkHealthy()
                         samples.fill(0)
                         if (text.isNotBlank()) {
                             finalText(text)
@@ -126,8 +141,10 @@ internal class BundledRecognitionSession(
                 // Talk is bounded; continuous wake silence keeps the same capture/decoder alive.
                 if (!continuous && now() - began >= 30_000) { finishing = true; break }
             }
-            if (!closed && !completed) { errorCode = BundledSpeechError.ENGINE_FAILURE; finalText(decoder.finish()) }
+            if (!closed && !completed) { errorCode = BundledSpeechError.ENGINE_FAILURE; finalText(decoder.finish().also { source.checkHealthy() }) }
         } catch (_: SecurityException) { if (!closed) deliver { failure(BundledSpeechError.PERMISSION) } }
+        catch (_: BundledCaptureOverflow) { if (!closed) deliver { failure(BundledSpeechError.CAPTURE_OVERFLOW) } }
+        catch (_: BundledUtteranceTooLong) { if (!closed) deliver { failure(BundledSpeechError.REQUEST_TOO_LONG) } }
         catch (_: Exception) { if (!closed) deliver { failure(errorCode) } }
         catch (_: LinkageError) { if (!closed) deliver { failure(BundledSpeechError.ENGINE_FAILURE) } }
         finally {

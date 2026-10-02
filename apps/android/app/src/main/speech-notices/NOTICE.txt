@@ -13,6 +13,10 @@ See SHERPA-ONNX-LICENSE.txt.
 Nakama builds the JNI library from pinned upstream source for arm64-v8a and
 x86_64, with TTS, speaker diarization and the C API disabled. The upstream AAR
 provides Kotlin classes/resources; its original native libraries are replaced.
+Nakama preserves the keyword decoder timestamp counter across history resets
+and patches the JNI result bridge to add the native segment start time. This
+keeps audio handover timestamps absolute after silence.
+The checked build recipe records and verifies this narrow upstream modification.
 The packaged native libraries are libsherpa-onnx-jni.so and libonnxruntime.so.
 No native espeak/piper text-to-speech component, Vosk or JNA is included by this
 speech runtime. Spoken replies use a separately installed Android TTS engine.
@@ -59,16 +63,23 @@ ANDROID-NDK-NOTICE.txt and ANDROID-NDK-NOTICE.toolchain.txt. These include the
 LLVM/Apache exceptions and C++ runtime notices as supplied with that NDK.
 They are aggregate toolchain notices and do not mean the whole NDK is shipped.
 
-ENGLISH SPEECH MODEL
-sherpa-onnx-streaming-zipformer-en-2023-06-26
-Publisher: csukuangfj / the Sherpa-ONNX model project.
-Pinned revision: 672fbf1b30579d6585301139bb363f42a0ad4a24
-https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/tree/672fbf1b30579d6585301139bb363f42a0ad4a24
-The model publisher identifies Apache-2.0 in its exact MODEL-README.md;
-the full license is included as APACHE-2.0.txt. Model weights and tokens are
-packaged from the pinned files without modification. Nakama derives a text BPE
-vocabulary from the publisher's bpe.model and adds a Nakama hotword hint;
-see BPE-VOCABULARY-PROVENANCE.md for the source and output hashes.
-Nakama additionally provides local microphone lifecycle, strict wake routing,
-signal evidence checks and model-integrity verification. Audio is not recorded
-and model preparation uses APK assets without a runtime model download.
+ENGLISH CONVERSATION AND WAKE MODELS
+Whisper base.en, original model copyright OpenAI, MIT.
+Sherpa ONNX int8 conversion pinned to publisher revision
+ 59eea950fc76df2453efb57e6c0fd334548e8ffe.
+See WHISPER-LICENSE.txt and CONVERSATION-MODEL-PROVENANCE.md for exact assets,
+source URLs and SHA-256. Nakama copies the published ONNX files and tokens.
+
+Silero VAD, copyright Silero Team, MIT; SILERO-VAD-LICENSE.txt.
+Its speech-activity ONNX model is checksum-pinned in the same provenance record.
+
+English Zipformer GigaSpeech keyword model, 3.3M, dated 2024-01-01,
+published by the Sherpa-ONNX project, Apache-2.0.
+See KWS-MODEL-README.md, KWS-PROVENANCE.md and APACHE-2.0.txt.
+Nakama copies the FP32 model files and token table, and derives an exact keyword
+configuration for NAKAMA and HEY NAKAMA. It does not add phonetic aliases.
+
+Nakama supplies microphone lifecycle, bounded in-memory audio buffering,
+keyword-to-command routing, cancellation and APK model-integrity verification.
+Model preparation extracts verified APK assets without a runtime download.
+No microphone recordings or private-device data accompany these notices.

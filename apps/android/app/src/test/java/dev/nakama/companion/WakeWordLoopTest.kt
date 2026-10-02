@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WakeWordLoopTest {
-    private class Fake(override val continuousSession: Boolean = false, override val startupTimeoutMillis: Long = 8_000L) : VoiceRecognition {
+    private class Fake(override val continuousSession: Boolean = false, override val startupTimeoutMillis: Long = 8_000L, override val completionTimeoutMillis: Long = 6_000L) : VoiceRecognition {
         lateinit var result: (String) -> Unit
         lateinit var error: (Int) -> Unit
         var started = false; var closed = false
@@ -129,4 +129,22 @@ class WakeWordLoopTest {
         }
     }
 
+    @Test fun offlineFinalizationHasItsOwnBoundedTimeoutAndStopStillCancelsIt() {
+        var now = 1L
+        lateinit var input: Fake
+        val commands = mutableListOf<String>()
+        val loop = WakeWordLoop({ now }, { result, failure ->
+            Fake(true, 60_000L, 60_000L).also { it.result = result; it.error = failure; input = it }
+        }, {}, commands::add)
+        loop.start(); loop.tick(false); input.ready(); input.ended()
+        now += 10_000; loop.tick(false)
+        assertTrue(loop.enabled); assertFalse(input.closed)
+        input.result("Nakama what time is it")
+        assertEquals(listOf("what time is it"), commands)
+        loop.start(); loop.tick(false); input.ready(); input.ended()
+        now += 60_001; loop.tick(false)
+        assertFalse(loop.enabled); assertTrue(input.closed)
+        input.result("Nakama late request")
+        assertEquals(1, commands.size)
+    }
 }

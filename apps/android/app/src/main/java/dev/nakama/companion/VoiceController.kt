@@ -141,7 +141,7 @@ class VoiceController internal constructor(
                     state(when (error) {
                         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is needed. You can still type."
                         SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't catch that. Tap Talk to try again."
-                        -200, -201, -202 -> "${LocalRecognitionPolicy.error(error)} No automatic service fallback was used."
+                        -200, -201, -202, -203, -204 -> "${LocalRecognitionPolicy.error(error)} No automatic service fallback was used."
                         SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> if (onDevice) "Bundled English recognition is unavailable. Install a complete Nakama update. No automatic service fallback was used." else "English recognition is unavailable in the selected Android service. Check Android voice input settings. No automatic service fallback was used."
                         SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "The Android recognition service could not connect. You can still type."
                         else -> "Voice paused (Android code $error). Tap Talk to retry."

@@ -33,7 +33,7 @@ npm start
 
 `npm run dist:win` creates an **unsigned local development installer**, not a production-signed release. There are no prebuilt downloads in this source release. Configure production signing, dependency notices, identity checks and deliberate installation/recovery acceptance before distributing binaries. [Release process](docs/release-signing.md).
 
-Android Talk and wake recognition include a bundled offline English model in the locally built APK; no Android recognition-model download is required after installation. Model assets are pinned and checksum-verified at build time, with downloaded weights and generated caches excluded from Git. The model makes the APK larger and is extracted into private app storage on first use. Spoken replies still need a separate installed Android text-to-speech voice.
+Android Talk uses bundled offline Whisper English transcription. Wake listening uses a separate lightweight keyword detector, then hands the request to the same transcription model; no Android recognition-model download is required after installation. Model assets are pinned and checksum-verified at build time, with downloaded weights and generated caches excluded from Git. The model makes the APK larger and is extracted into private app storage on first use. Spoken replies still need a separate installed Android text-to-speech voice.
 
 For Android build commands and limitations, read [Android verification](apps/android/VERIFICATION.md) and [Android setup](docs/android-guide.md). The normal debug task uses your own local development key. It will not update an installation signed by another key. Never uninstall an existing app merely to bypass a signature mismatch; preserve its data and signing identity.
 

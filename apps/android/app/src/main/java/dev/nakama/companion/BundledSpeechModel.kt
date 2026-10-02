@@ -67,6 +67,10 @@ internal object BundledSpeechModel {
                 check(stage.renameTo(target)) { "Could not finish bundled model preparation." }
             } finally { if (stage.exists()) remove(root, stage) }
         }
+        // Only our old verified-model directories; a successful replacement is already present.
+        root.listFiles()?.filter { it != target && it.isDirectory &&
+            (it.name.startsWith("sherpa-onnx-") || it.name.startsWith("nakama-speech-")) }
+            ?.forEach { obsolete -> runCatching { remove(root, obsolete) } }
         target.also { prepared = it }
     }
     fun available(context: Context): Boolean = runCatching { manifest(context); true }.getOrDefault(false)

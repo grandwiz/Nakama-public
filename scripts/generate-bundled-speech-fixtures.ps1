@@ -1,10 +1,11 @@
 # Render test fixtures using installed Windows desktop voices only.
 # No microphone, audio playback, account, or network request is used.
 [CmdletBinding()]
-param([string]$OutputDirectory = (Join-Path $PSScriptRoot '../.cache/bundled-speech/audio'))
+param([string]$OutputDirectory = '')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Speech
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '../.cache/bundled-speech/audio' }
 $fixtureOutput = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $fixtureOutput | Out-Null
 $fixtureSynth = [System.Speech.Synthesis.SpeechSynthesizer]::new()
@@ -50,6 +51,31 @@ try {
             }
         }
     }
+    $extraOutput = Join-Path $fixtureOutput 'kws-extra'
+    New-Item -ItemType Directory -Force -Path $extraOutput | Out-Null
+    $extraPhrases = @(
+        'Knock a man on the shoulder.', 'No comma belongs in that sentence.',
+        'My new camera is on the table.', 'Hey, new camera, take a picture.',
+        'Mister Nakamura is on his way.', 'Now come on, let us go.',
+        'She is not coming today.', 'An anaconda lives near the river.'
+    )
+    $extraManifest = @()
+    foreach ($voice in $fixtureVoices) {
+        $fixtureSynth.SelectVoice($voice.name)
+        for ($index = 0; $index -lt $extraPhrases.Count; $index++) {
+            $file = $voice.id + '-negative-' + $index + '.wav'
+            $path = Join-Path $extraOutput $file
+            $fixtureSynth.SetOutputToWaveFile($path, $fixtureFormat)
+            $fixtureSynth.Speak($extraPhrases[$index])
+            $fixtureSynth.SetOutputToNull()
+            $extraManifest += [pscustomobject]@{
+                file=$file; phrase=$extraPhrases[$index]; expectedWake=$false
+                sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        }
+    }
+    [IO.File]::WriteAllText((Join-Path $extraOutput 'manifest.json'),
+        ($extraManifest | ConvertTo-Json -Depth 3), [Text.UTF8Encoding]::new($false))
 } finally {
     $fixtureSynth.Dispose()
 }
