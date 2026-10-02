@@ -7,9 +7,9 @@ The Android companion is an engineering preview. The following results cover loc
 | Check | Result |
 | --- | --- |
 | Production and instrumentation builds | Passed with SDK 36, JDK 17 and the Gradle wrapper. The recorded run used cached dependencies in offline mode. |
-| JVM tests | 77 passed with no failures or errors. |
-| Lint | Zero errors, 34 warnings and two informational hints. |
-| Focused Android 16 instrumentation | Eight passed: five monitoring/upgrade cases and three autonomous-task cases. |
+| JVM tests | 120 passed with no failures or errors. |
+| Lint | Zero errors, 38 warnings and two informational hints. |
+| Focused Android 16 instrumentation | 51 passed, including device isolation, multi-target alarms, clocks, voice, app selection, monitoring and visible control. |
 | Crash buffer | Empty after the focused instrumentation run. |
 
 The monitoring fixtures cover paused creation with an exact rule and cadence, revision-bound resume/pause, failed-save draft retention, rejection of delayed responses after access revocation, private browser navigation and generic attention notices. Upgrade fixtures verify that saving a request leaves it held and does not execute a model or installation. Policy tests cover exact-app exclusions, incomplete or sensitive observations, expiry, pairing/configuration changes and navigation restrictions.
@@ -59,3 +59,9 @@ Preview build 3 preserves the existing application ID, version name and debug si
 An initial run had two Clock fixture failures (Compose scroll timing and test-package preference context). Correcting those test boundaries produced the successful full rerun. Local timer state-machine checks cover deadline restoration, pause/resume/cancel, denied permission/registration failure, stale alarm receipts, bounded history and no model calls. Clock UI tests use synthetic alarm/notification effects. Voice tests use synthetic callbacks/PCM rather than recording a microphone.
 
 Actual phone/tablet audio, recognizer continuous-session support, listening chimes, background reliability, battery impact and audible timer delivery still require manual acceptance. Local package integrity and signing checks passed; no physical-device install or provider inference was performed. See [setup steps](../../docs/android-guide.md#optional-local-nakama-wake-word) and [Clock behavior](../../docs/clock.md).
+
+## Device routing preview (2026-10-02)
+
+Build 4 preserves dev.nakama.companion and the existing local debug signing identity. Full JVM tests: 120 passed. Final lint: zero errors, 38 warnings, two hints. The final disposable Android 16 emulator run passed all 51 cases, including six device-isolation tests and four Foundations tests. The initial run passed 50/51; the older Foundations fixture needed to scroll the expanded category row before selecting Routines. After correcting only that test interaction, the full rerun passed and the crash buffer was empty.
+
+Checks cover foreign/unstamped voice and attention suppression, execution target distinct from reply recipient, exact alarm membership, version-bound independent scheduling receipts, multi-target edits, remote timer redelivery and conflicting request IDs. Tests use fake responses and timer adapters; they do not prove audible hardware delivery or actual Netflix launch. See the [complete current verification](../../docs/verification.md#device-isolation-remote-targets-and-browser-sessions-2026-10-02) and [installation/targeting guide](../../docs/device-routing.md). The owner installs the APK manually; no personal phone/tablet was a fixture.

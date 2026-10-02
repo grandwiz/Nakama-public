@@ -93,14 +93,21 @@ class WakeWordService : Service() {
             VoiceAudioGate.set(this@WakeWordService, true)
             var accessWatch: Job? = null
             try {
-                if (command != null) LocalClockCommands.parse(command)?.let { local ->
+                val directed = command?.let(DeviceCommandRouting::parse)
+                if (directed?.error?.isNotBlank() == true) { say(directed.error); return@launch }
+                if (directed != null && !DeviceCommandRouting.isThisDevice(directed.targetName)) {
+                    runDirectedCommand(directed)
+                    return@launch
+                }
+                val issuedCommand = directed?.originalCommand ?: command
+                if (issuedCommand != null) LocalClockCommands.parse(issuedCommand)?.let { local ->
                     val reply = LocalClockActions.execute(this@WakeWordService, local)
                     say(reply.text)
                     if (local == LocalClockCommand.Open) handoff(page = "Clock")
                     return@launch
                 }
-                if (command != null && (NavigationPolicy.parse(command) != null || FoundationPolicy.command(command) != null || PhoneCommandParser.parse(command) != null)) {
-                    if (!handoff(command)) say("Open Nakama to continue that phone command. Your existing permissions and confirmations still apply.")
+                if (issuedCommand != null && (NavigationPolicy.parse(issuedCommand) != null || FoundationPolicy.command(issuedCommand) != null || PhoneCommandParser.parse(issuedCommand) != null)) {
+                    if (!handoff(issuedCommand)) say("Open Nakama to continue that phone command. Your existing permissions and confirmations still apply.")
                     return@launch
                 }
                 val saved = accepted?.first ?: PairingVault(this@WakeWordService).load()
@@ -131,13 +138,42 @@ class WakeWordService : Service() {
                         result
                     } finally { work?.let(MoteWorkSignals::endLocalWork) }
                 }, current, ::say, { handoff() }, { snapshot -> syncAlarms(saved, snapshot, current) })
-                if (accepted != null) runner.follow(accepted.second) else runner.run(command ?: return@launch)
+                if (accepted != null) runner.follow(accepted.second) else runner.run(issuedCommand ?: return@launch)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
                 MoteWorkSignals.clearHost()
                 if (running && !stopped && unlocked) { say("I couldn't complete that voice request. Open Nakama to check the connection and task status before trying again."); handoff() }
             } finally { accessWatch?.cancel(); activeIdentity = null; activeWorkflowId = null; VoiceAudioGate.set(this@WakeWordService, false); if (!stopped && !status.startsWith("Unavailable")) status = "Waiting for the local microphone" }
         }
+    }
+    private suspend fun runDirectedCommand(command: DirectedDeviceCommand) {
+        val saved = PairingVault(this).load() ?: run { say("Pair your PC before targeting another device. Nothing was redirected."); return }
+        activeIdentity = saved
+        fun current() = running && !stopped && unlocked && PairingVault(this).load() == saved
+        var accessWatch: Job? = null
+        try {
+            val directory = withContext(Dispatchers.IO) { HostClient(saved).request("GET", "/api/device-targets") }
+            val target = DeviceCommandRouting.resolve(command.targetName, DeviceCommandRouting.targets(directory))
+            check(current()) { "The requesting session changed. Nothing was redirected." }
+            val result = withContext(Dispatchers.IO) { HostClient(saved).request("POST", "/api/device/commands", DeviceCommandRouting.body(command, target, java.util.UUID.randomUUID().toString()).put("inputMode", "voice")) }
+            val state = withContext(Dispatchers.IO) { HostClient(saved).request("GET", "/api/state") }
+            if (!current() || !WakeConversationAccess.allowed(state, saved.deviceId)) return
+            accessWatch = scope.launch {
+                while (isActive) {
+                    delay(4_500)
+                    val fresh = try { withContext(Dispatchers.IO) { HostClient(saved).request("GET", "/api/state") } }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { null }
+                    if (!current() || fresh == null || !WakeConversationAccess.allowed(fresh, saved.deviceId)) {
+                        voice?.stop(); conversation?.cancel(); break
+                    }
+                }
+            }
+            if (current() && DeviceDelivery.addressedTo(result, saved.deviceId))
+                say(result.optString("reply").ifBlank { "Request queued for ${target.name}. Completion has not been confirmed." })
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { if (current()) say(error.message ?: "Could not confirm the other-device request. Check its target before retrying.") }
+        finally { accessWatch?.cancel() }
     }
     private suspend fun say(text: String) {
         val output = voice ?: return
@@ -160,7 +196,7 @@ class WakeWordService : Service() {
             if (!current()) { PhoneAlarmScheduler.clear(this); return }
             val id = receipt.getString("routineId"); receipt.remove("routineId")
             withContext(Dispatchers.IO) { HostClient(saved).request("POST", "/api/routines/$id/device-status", receipt) }
-            if (receipt.optString("status") in listOf("permission_required", "failed")) { say(receipt.optString("detail")); handoff() }
+            if (receipt.optString("status") in listOf("permission_required", "failed") && routines.any { it.optString("id") == id && DeviceDelivery.addressedTo(it, saved.deviceId) }) { say(receipt.optString("detail")); handoff() }
         }
     }
     private fun handoff(command: String? = null, page: String? = null): Boolean {

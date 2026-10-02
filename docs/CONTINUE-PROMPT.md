@@ -21,5 +21,7 @@ artifacts, reviews, checks, backups and local owner approval.
 Do not copy credentials, browser profiles, signing keys, personal checklists,
 logs or reports into source. Keep Kling disabled unless explicitly enabled by
 the installation owner; every generation still requires its own approval.
+Preserve origin-scoped device delivery, explicit remote app/timer targets, multi-device
+alarm receipts and browser-wide ordinary-tab sessions. Read docs/device-routing.md.
 Report actual tests, remaining acceptance and installed-version evidence honestly.
 ```

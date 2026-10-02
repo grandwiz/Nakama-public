@@ -29,6 +29,7 @@ class PhoneActions(private val activity: Activity) {
                 "calendar" -> calendar(args)
                 "contacts_search" -> contacts(args)
                 "open_app" -> openApp(args)
+                "timer_start" -> RemotePhoneTimers.execute(activity, PairingVault(activity).load() ?: error("The pairing changed."), action)
                 "whatsapp_message" -> whatsapp(args)
                 "ui_read", "ui_tap", "ui_type", "ui_scroll", "ui_back" -> NakamaAccessibilityService.execute(action.getString("type"), args)
                 else -> ActionResult("unsupported", "This version does not support '${action.optString("type")}'.")

@@ -69,14 +69,15 @@ test("overdue timers finish at startup while paused timers and existing routine 
 });
 test("device timer records, local chat receipts and completion notices remain scoped and revoke safe",async(t)=>{
   const f=await fixture(t);
-  const result=await f.request("POST","/api/chat",{message:"set a 1 second timer called private fixture",routing:"auto",requestId:"private-one"},PHONE);
+  const result=await f.request("POST","/api/chat",{message:"set a 1 second timer called private fixture on PC",routing:"auto",requestId:"private-one"},PHONE);
   assert.equal(result.local,true);
   const own=(await f.request("GET","/api/clock",{},PHONE)).timers[0];
   assert.equal((await f.request("GET","/api/clock",{},OTHER)).timers.length,0);
   assert.equal(JSON.stringify(await f.request("GET","/api/state",{},OTHER)).includes("private fixture"),false);
   await assert.rejects(f.request("POST",`/api/clock/timers/${own.id}/cancel`,{revision:own.revision},OTHER),/not found/);
   f.advance(1000); await f.host.clockTimers.tick();
-  assert.equal((await f.request("GET","/api/attention",{},PHONE)).items.some((item)=>item.timerId===own.id),true);
+  assert.equal((await f.request("GET","/api/attention",{},PHONE)).items.some((item)=>item.timerId===own.id),false);
+  assert.equal((await f.request("GET","/api/attention")).items.some((item)=>item.timerId===own.id),true);
   assert.equal((await f.request("GET","/api/attention",{},OTHER)).items.some((item)=>item.timerId===own.id),false);
   await f.request("PATCH","/api/devices/phone",{googleAccess:false});
   await assert.rejects(f.request("GET","/api/clock",{},PHONE),/unavailable/);

@@ -68,9 +68,9 @@ Grant phone permissions only as needed. The Android guide explains microphone, c
 
 Follow the [Chrome extension guide](chrome-extension.md). It uses its own Chrome ticket and the local address `http://127.0.0.1:43111`. This address is only for the browser on the PC. Android uses pinned HTTPS instead.
 
-Allow the tab you want to use. Browser control is stopped by clearing allowed tabs or revoking the browser in Control Center.
+Select **Enable all ordinary tabs** and accept Chrome's website-access grant once. The two-hour session covers existing and new ordinary tabs without per-tab prompts. Stop the session in the extension or revoke the browser in Control Center.
 
-The extension supports explicit page actions and guarded screenshots of the focused allowed tab. It does not yet provide a continuous autonomous browsing agent or complete coverage of every website. Recognised deployment/deletion controls require you to finish the action directly. See [capture limits](chrome-extension.md#capture-the-visible-tab).
+The extension supports explicit page actions and guarded screenshots of the focused eligible tab. It does not yet provide a continuous autonomous browsing agent or complete coverage of every website. Recognised deployment/deletion controls require you to finish the action directly. See [capture limits](chrome-extension.md#capture-the-visible-tab).
 
 ## 5. Set up your services
 
@@ -100,7 +100,7 @@ Enable additional device features one at a time:
 
 | Feature | Setup | Acceptance to perform |
 | --- | --- | --- |
-| Phone alarms | Target a routine to a phone, grant notification/exact-alarm access and enable local sync | Correct time/zone, schedule receipt, actual sound and cancellation |
+| Phone alarms | Select one or more phones/tablets, grant notification/exact-alarm access and enable sync on each | Correct time/zone, schedule receipt, actual sound and cancellation |
 | Location | Explicit phone consent and Android permission | Accuracy, timestamps, stale/offline state, reconnect and Stop/forget |
 | Windows remote desktop | Overall PC setting and intended phone permission | Correct monitor, harmless touch/typing, switcher, Stop and expiry |
 | Android app navigation | Direct local command; visible app-control session/accessibility for supported global actions | Correct destination, denied permission, protected screens and Stop |

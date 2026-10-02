@@ -31,7 +31,7 @@ function mockWorker({
 } = {}) {
   const localState = { pairing: { token: "private-device-token" }, ...local },
     sessionState = {
-      allowedTabs: { 1: { origin, expiresAt: Date.now() + 7200000 } },
+      browserSession: { id: "session-1", controlEpoch: "", pairingToken: "private-device-token", expiresAt: Date.now() + 7200000 },
       ...session,
     };
   const invocations = [],
@@ -78,6 +78,7 @@ function mockWorker({
   ];
   const windows = [{ id: 1, focused: true, type: "normal", state: "normal" }];
   const chrome = {
+    permissions: { contains: async () => true, onRemoved: hook("permissionsRemoved") },
     storage: {
       local: area(localState),
       session: area(sessionState),
@@ -412,7 +413,7 @@ test("revocation and connection changes stop queued browser actions", async () =
   await Promise.all([revoked.context.poll(), revoked.context.poll()]);
   assert.equal(revoked.localState.pairing, undefined);
   assert.equal(revoked.localState.receipts, undefined);
-  assert.equal(revoked.sessionState.allowedTabs, undefined);
+  assert.equal(revoked.sessionState.browserSession, undefined);
   assert.equal(revoked.invocations.length, 0);
   assert.equal(revoked.requests.length, 1);
   let changed;
@@ -440,7 +441,7 @@ test("401 while acknowledging clears receipts and stops remaining queued actions
   assert.equal(f.invocations.length, 1);
   assert.equal(f.localState.pairing, undefined);
   assert.equal(f.localState.receipts, undefined);
-  assert.equal(f.sessionState.allowedTabs, undefined);
+  assert.equal(f.sessionState.browserSession, undefined);
   assert.match(f.localState.lastStatus, /revoked/);
 });
 
@@ -456,7 +457,7 @@ test("a stale 401 cannot clear a replacement connection or its receipts", async 
   await f.context.poll();
   assert.equal(f.localState.pairing.token, "replacement-token");
   assert.ok(f.localState.receipts.fresh);
-  assert.ok(f.sessionState.allowedTabs);
+  assert.ok(f.sessionState.browserSession);
   assert.equal(f.invocations.length, 0);
 });
 
@@ -523,24 +524,54 @@ for (const replacement of [false, true])
     assert.match(f.localState.lastStatus, /connection changed/);
   });
 
-test("wrong-origin and expired tab sessions are blocked and omitted from tab listing", async () => {
+test("one broad session includes new tabs and other websites without a tab grant", async () => {
   const f = mockWorker();
-  f.tabs[0].url = "https://different.test/private";
+  f.tabs.push({ ...f.tabs[0], id: 2, url: "https://another.test/help", active: false });
+  f.tabs[0].url = "https://different.test/page";
+  assert.equal((await f.context.execute(action())).status, "started");
+  assert.equal((await f.context.execute(action("second", { args: { tabId: 2, selector: "#normal" } }))).status, "started");
+  const result = await f.context.execute(action("list", { type: "browser_tabs", args: {} }));
+  assert.deepEqual(Array.from(result.data.tabs, (t) => t.id), [1, 2]);
+  assert.equal((await f.context.execute(action("nav", { type: "browser_navigate", args: { tabId: 1, url: "https://third.test/help" } }))).status, "started");
+  f.sessionState.browserSession.expiresAt = 0;
   assert.equal((await f.context.execute(action())).status, "blocked");
-  const result = await f.context.execute(
-    action("list", { type: "browser_tabs", args: {} }),
-  );
-  assert.equal(result.data.tabs.length, 0);
-  f.tabs[0].url = origin;
-  f.sessionState.allowedTabs[1].expiresAt = 0;
-  assert.equal((await f.context.execute(action())).status, "blocked");
+  assert.equal((await f.context.execute(action("list", { type: "browser_tabs", args: {} }))).status, "blocked");
+});
+
+test("broad session excludes private, protected, loading and internal tabs", async () => {
+  const f = mockWorker();
+  for (const [index, url] of ["chrome://settings", "chrome-extension://test/popup.html", "file:///private.txt", "https://user:pass@example.test/", "http://127.0.0.1:43111/", "http://localhost:43111/", "https://example.test/login", "https://example.test/checkout", "https://chromewebstore.google.com/detail/app"].entries())
+    f.tabs.push({ ...f.tabs[0], id: index + 2, url });
+  f.tabs.push({ ...f.tabs[0], id: 20, incognito: true }, { ...f.tabs[0], id: 21, pendingUrl: origin + "/loading" });
+  const result = await f.context.execute(action("list", { type: "browser_tabs", args: {} }));
+  assert.deepEqual(Array.from(result.data.tabs, (t) => t.id), [1]);
+  for (const tab of f.tabs.slice(1)) assert.equal((await f.context.execute(action("blocked", { args: { tabId: tab.id } }))).status, "blocked");
   assert.equal(f.invocations.length, 0);
+});
+
+test("permission removal, browser restart, legacy tab grants and replacement pairing cannot enable control", async () => {
+  const cases = [
+    (f) => { f.chrome.permissions.contains = async () => false; },
+    (f) => { delete f.sessionState.browserSession; f.sessionState.allowedTabs = { 1: { origin, expiresAt: Date.now() + 60000 } }; },
+    (f) => { f.localState.pairing.token = "new-pairing"; },
+  ];
+  for (const mutate of cases) {
+    const f = mockWorker(); mutate(f);
+    assert.equal((await f.context.execute(action())).status, "blocked");
+    assert.equal(f.invocations.length, 0);
+  }
+  const f = mockWorker();
+  f.chrome.permissions.contains = async () => false;
+  await Promise.all([...f.listeners.permissionsRemoved].map((callback) => callback({ origins: ["<all_urls>"] })));
+  assert.equal(f.sessionState.browserSession, undefined);
+  f.chrome.permissions.contains = async () => true;
+  assert.equal((await f.context.execute(action())).status, "blocked");
 });
 
 test("stop while tab details are loading blocks execution; injected checks include origin and expiry", async () => {
   const f = mockWorker();
   f.chrome.tabs.get = async () => {
-    delete f.sessionState.allowedTabs;
+    delete f.sessionState.browserSession;
     return f.tabs[0];
   };
   assert.equal((await f.context.execute(action())).status, "blocked");
@@ -617,7 +648,8 @@ test("screenshots return bounded JPEG metadata for the allowed visible tab witho
   assert.equal(f.listeners.activated.size, 0);
   assert.equal(f.listeners.updated.size, 0);
   assert.equal(f.listeners.focusChanged.size, 0);
-  assert.equal(f.listeners.removed.size, 1); // Existing session cleanup stays installed.
+  assert.equal(f.listeners.removed.size, 0);
+  assert.equal(f.listeners.permissionsRemoved.size, 1); // Global grant revocation stays installed.
   assert.equal(f.invocations.filter((i) => i.type === "navigate").length, 0);
   assert.ok(f.invocations.some((i) => i.args?.[0] === "cleanup"));
 });
@@ -646,10 +678,10 @@ test("screenshots refuse inactive, unfocused, loading, split, expired and unpair
       f.tabs[0].splitViewId = 3;
     },
     (f) => {
-      f.tabs[0].url = "https://different.test/private";
+      f.tabs[0].url = "https://different.test/login";
     },
     (f) => {
-      f.sessionState.allowedTabs[1].expiresAt = 0;
+      f.sessionState.browserSession.expiresAt = 0;
     },
     (f) => {
       delete f.localState.pairing;
@@ -700,13 +732,13 @@ test("screenshots discard transient tab/window switches, navigation and revocati
       f.emit("removed", 1);
     },
     (f) => {
-      delete f.sessionState.allowedTabs;
+      delete f.sessionState.browserSession;
     },
     (f) => {
       f.localState.pairing.token = "different-device";
     },
     (f) => {
-      f.sessionState.allowedTabs[1].expiresAt = 0;
+      f.sessionState.browserSession.expiresAt = 0;
     },
   ];
   for (const change of changes) {
@@ -852,7 +884,7 @@ test("revocation during encoding or final cleanup discards screenshot bytes and 
   let encoding;
   encoding = mockWorker({
     canvasOverride: () => {
-      delete encoding.sessionState.allowedTabs;
+      delete encoding.sessionState.browserSession;
       return new Blob([new Uint8Array(1000)], { type: "image/jpeg" });
     },
   });
@@ -968,10 +1000,9 @@ test(
     const manifest = JSON.parse(
       await fs.readFile(path.join(extension, "manifest.json"), "utf8"),
     );
-    // captureVisibleTab needs activeTab (a real extension invocation) or all_urls.
-    // Headless Playwright cannot invoke the Chrome toolbar. This disposable test
-    // copy grants the documented alternative; the shipped manifest is unchanged.
-    // The profile only opens our local fixture and its own extension popup.
+    // Headless Chrome cannot accept a real optional-permission prompt. This
+    // disposable copy grants the production feature's optional all_urls upfront.
+    // The profile only opens local fixture pages and its own extension popup.
     manifest.host_permissions.push("<all_urls>");
     await fs.writeFile(
       path.join(extension, "manifest.json"),
@@ -1009,7 +1040,7 @@ test(
     await worker.evaluate(
       async ({ id, url }) => {
         await chrome.storage.session.set({
-          allowedTabs: { [id]: { origin: url, expiresAt: Date.now() + 60000 } },
+          browserSession: { id: "fixture-session", controlEpoch: "", pairingToken: "disposable-local-test-token", expiresAt: Date.now() + 60000 },
         });
         await chrome.storage.local.set({
           pairing: { token: "disposable-local-test-token" },
@@ -1267,10 +1298,27 @@ test(
     );
     assert.equal(wrong.status, "blocked");
     const list = await worker.evaluate(async () =>
-      globalThis.__nakamaTest.execute({ type: "browser_tabs", args: {} }),
+      globalThis.__nakamaTest.execute({ type: "browser_tabs", args: {}, expiresAt: new Date(Date.now() + 300000).toISOString() }),
     );
     assert.equal(list.data.tabs.length, 1);
     assert.equal(list.data.tabs[0].id, tabId);
+    const secondPage = await browser.newPage();
+    await secondPage.goto(fixtureUrl + "/capture");
+    const listNow = () => worker.evaluate(async () => globalThis.__nakamaTest.execute({
+      type: "browser_tabs", args: {}, expiresAt: new Date(Date.now() + 300000).toISOString(),
+    }));
+    assert.equal((await listNow()).data.tabs.length, 2);
+    await secondPage.reload();
+    assert.equal((await listNow()).data.tabs.length, 2);
+    const anotherOrigin = fixtureUrl.replace("127.0.0.1", "localhost");
+    await secondPage.goto(anotherOrigin + "/capture");
+    assert.ok((await listNow()).data.tabs.some((tab) => tab.url.startsWith(anotherOrigin)));
+    const secondId = (await listNow()).data.tabs.find((tab) => tab.url.startsWith(anotherOrigin)).id;
+    const secondRead = await worker.evaluate(async (id) => globalThis.__nakamaTest.execute({
+      type: "browser_read", args: { tabId: id }, expiresAt: new Date(Date.now() + 300000).toISOString(),
+    }), secondId);
+    assert.equal(secondRead.status, "completed");
+    await secondPage.close();
     await popup.close();
     await page.bringToFront();
     const protectedCapture = await run("browser_screenshot", {});

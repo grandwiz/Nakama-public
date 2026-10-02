@@ -90,7 +90,7 @@ class MascotOverlayService : Service() {
         scope.launch { PhoneMonitorObserver.whileMascotVisible(this@MascotOverlayService) }
         return START_NOT_STICKY
     }
-    /** Read-only status refresh. No model calls, browser frames, microphone access or screen reading. */
+    /** Visible-service status and addressed timer delivery. No model calls, app launches or screen reading. */
     private suspend fun refreshWorkWhileVisible() {
         while (currentCoroutineContext().isActive) {
             val saved = PairingVault(this).load()
@@ -100,7 +100,13 @@ class MascotOverlayService : Service() {
                 try {
                     val snapshot = withContext(Dispatchers.IO) { HostClient(saved).request("GET", "/api/state") }
                     if (PairingVault(this).load() == saved && MoteWorkSignals.updateHost(saved, snapshot, startedAt)) {
-                        if (MoteWorkSignals.permitted(saved, snapshot)) ProjectAttention.update(this, saved, snapshot.optJSONObject("attention"))
+                        if (MoteWorkSignals.permitted(saved, snapshot)) {
+                            ProjectAttention.update(this, saved, snapshot.optJSONObject("attention"))
+                            val confirm = getSharedPreferences("nakama_preferences", MODE_PRIVATE).getBoolean("confirmActions", false) || snapshot.optJSONObject("config")?.optBoolean("confirmOrdinaryActions") == true
+                            if (!confirm) ActionInbox.poll(this, saved, timerOnly = true, canExecute = { PairingVault(this).load() == saved }) {
+                                RemotePhoneTimers.execute(this, saved, it)
+                            }
+                        }
                         else ProjectAttention.clear(this)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }

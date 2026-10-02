@@ -1,3 +1,5 @@
+import { originId } from "./device-delivery.mjs";
+import { resolveDeviceTarget } from "./device-commands.mjs";
 import { parseClockCommand, localClockReply } from "./local-clock.mjs";
 import { ApiError, now, uid } from "./security.mjs";
 import { assertPersonalAccess } from "./personal-access.mjs";
@@ -65,13 +67,23 @@ export class LocalAssistant {
     const tasks = () => this.host.boards.taskState(principal).items;
     const routines = () => this.host.boards.routineState(principal).routines;
     try {
-      const clockReply = await localClockReply(this.host, parseClockCommand(input), body, principal);
-      const navigation = navigationRequest(
-        input,
-        this.host.store.state,
-        body.projectId,
-      );
-      if (clockReply) {
+      const navigation = navigationRequest(input, this.host.store.state, body.projectId);
+      const remoteTimer = /^(.*?)\s+on\s+(.+)$/i.exec(input);
+      const timerCommand = remoteTimer && parseClockCommand(remoteTimer[1]);
+      const openApp = /^open\s+(.+?)(?:\s+on\s+(.+))?$/i.exec(input);
+      let deviceReply;
+      if (timerCommand?.type === "create") {
+        deviceReply = await this.host.deviceCommands.route({ command: "timer", targetDeviceName: remoteTimer[2], args: {
+          durationSeconds: timerCommand.durationSeconds, title: timerCommand.title, ...(body.requestId ? { requestId: body.requestId } : {}),
+        } }, principal);
+      } else if (openApp && !navigation && !/^(?:up )?(?:me )?(?:the |that |my )?(?:captcha|checkout)(?: page)?(?: for me to (?:fill in|complete))?$/i.test(openApp[1])) {
+        deviceReply = await this.host.deviceCommands.route({ command: "open_app", ...(openApp[2] ? { targetDeviceName: openApp[2] } : {}), args: { appName: openApp[1].replace(/ app$/i, "") } }, principal);
+      }
+      const clockReply = deviceReply ? null : await localClockReply(this.host, parseClockCommand(input), body, principal);
+      if (deviceReply) {
+        reply = deviceReply.reply;
+        outcome = { type: deviceReply.timer ? "timer_created" : "device_command_queued", ...(deviceReply.id ? { actionId: deviceReply.id } : {}), targetDeviceId: deviceReply.targetDeviceId || "desktop" };
+      } else if (clockReply) {
         ({ reply, outcome } = clockReply);
       } else if (navigation) {
         access();
@@ -507,12 +519,12 @@ export class LocalAssistant {
         outcome = { type: "routine_created", id: item.id };
       } else if (
         (match =
-          /^(?:set|create|add)(?: a| an)? (morning )?alarm(?: for| at)?\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)(?:\s+(every day|daily|on weekdays|on weekends))?$/i.exec(
+          /^(?:set|create|add)(?: a| an)? (morning )?alarm(?: for| at)?\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)(?:\s+(every day|daily|on weekdays|on weekends))?(?:\s+on\s+(.+))?$/i.exec(
             input,
           ))
       ) {
         access();
-        if (principal.kind !== "device")
+        if (principal.kind !== "device" && !match[4])
           throw new ApiError(
             409,
             "Choose the target phone in the Routines board before creating an alarm, or ask on that phone.",
@@ -537,7 +549,7 @@ export class LocalAssistant {
                 ? [0, 6]
                 : [0, 1, 2, 3, 4, 5, 6],
           enabled: true,
-          targetDeviceId: principal.id,
+          targetDeviceIds: match[4] ? match[4].split(/\s+and\s+|\s*,\s*/i).map((name) => resolveDeviceTarget(this.host.store.state, principal, { targetDeviceName: name }, { desktop: false, connected: false }).id) : [principal.id],
           ...(body.requestId ? { requestId: body.requestId } : {}),
         });
         reply = ready(item);
@@ -673,7 +685,7 @@ export class LocalAssistant {
       access();
       const clockRequest = parseClockCommand(input);
       const clockSensitive = Boolean(clockRequest && !["greeting", "thanks"].includes(clockRequest.type));
-      const scoped = clockSensitive ? (principal.kind === "device" ? { visibleToDeviceId: principal.id } : { ownerOnly: true }) : {};
+      const scoped = { deliveryDeviceId: originId(principal), ...(clockSensitive ? (principal.kind === "device" ? { visibleToDeviceId: principal.id } : { ownerOnly: true }) : {}) };
       const locationSensitive = [
         "location_read",
         "weather_lookup",

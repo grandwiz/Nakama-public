@@ -376,7 +376,7 @@ test("mock end-to-end plan sends exact approved text, reports queued phone work 
         { ...call, action: "open_app", args: { packageName: "com.whatsapp" } },
         { type: "request_delete_project", projectId: "project" },
       ],
-      'Email alice@example.com "Hello Alice"; open WhatsApp; request delete of Website project',
+      'Email alice@example.com "Hello Alice"; open WhatsApp on My phone; request delete of Website project',
     );
   const outcomes = await executeActionPlan(f.host, plan, owner);
   assert.deepEqual(
@@ -423,7 +423,7 @@ test("failure stops later steps, reports uncertainty and never retries earlier s
         email,
         { ...call, action: "open_app", args: { packageName: "com.whatsapp" } },
       ],
-      'Create a project; email alice@example.com "Hello Alice"; open WhatsApp',
+      'Create a project; email alice@example.com "Hello Alice"; open WhatsApp on My phone',
     );
   const result = await executeActionPlan(f.host, plan, owner);
   assert.equal(f.calls.length, 2);
@@ -443,7 +443,7 @@ test("unexpected provider results do not become success claims or trigger follow
         email,
         { ...call, action: "open_app", args: { packageName: "com.whatsapp" } },
       ],
-      'Email alice@example.com "Hello Alice"; open WhatsApp',
+      'Email alice@example.com "Hello Alice"; open WhatsApp on My phone',
     );
   const result = await executeActionPlan(f.host, plan, owner);
   assert.equal(result[0].status, "unconfirmed");

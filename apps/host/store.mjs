@@ -1,3 +1,4 @@
+import { stampDeliveryState } from "./device-delivery.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -255,6 +256,7 @@ export class Store extends EventEmitter {
       }
     syncTaskBoard(this.state, this.clock());
     syncAgentOffice(this.state);
+    stampDeliveryState(this.state);
     await this.save();
     return this;
   }
@@ -299,6 +301,7 @@ export class Store extends EventEmitter {
       let result;
       try {
         result = await fn(this.state);
+        stampDeliveryState(this.state);
         syncTaskBoard(this.state, this.clock());
         syncAgentOffice(this.state);
         await this.save();

@@ -69,3 +69,22 @@ test("finished timer notices keep titles private and dismissed clicks cannot reo
   assert.equal(opened.length, 1);
   handler.close();
 });
+
+
+test("PC notifications ignore phone and tablet delivery even in an owner view", () => {
+  const notices = [];
+  class Notification extends EventEmitter {
+    static isSupported() { return true; }
+    constructor(options) { super(); notices.push(this); }
+    show() {}
+    close() { this.emit("close"); }
+  }
+  const handler = createDesktopAttention({ Notification, onOpen() {} });
+  handler.update({ items: [
+    { id: "timer:phone", kind: "timer", deliveryDeviceId: "phone" },
+    { id: "monitor:tablet", kind: "monitor", deliveryDeviceId: "tablet" },
+    { id: "upgrade:pc", kind: "upgrade", deliveryDeviceId: "desktop" },
+  ] });
+  assert.equal(notices.length, 1);
+  handler.close();
+});

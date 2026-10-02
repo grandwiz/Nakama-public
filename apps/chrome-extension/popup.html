@@ -33,11 +33,14 @@
       <section id="controls" hidden>
         <h2>You're in control</h2>
         <p>
-          Allow the current tab for two hours. Nakama can then read and interact
-          with this website when you request an action. Screenshots require this
-          tab to stay visible in the focused Chrome window.
+          Enable all ordinary website tabs for two hours, including new tabs and
+          navigation to other sites. Chrome asks once for website access and saves
+          that grant. Browser restart, expiry or Stop ends the active session.
+          Private and protected pages remain excluded. Screenshots require the
+          requested tab to stay visible in the focused Chrome window.
         </p>
-        <button id="allow">Allow this tab</button
+        <p id="session" role="status"></p>
+        <button id="allow">Enable all ordinary tabs</button
         ><button id="poll" class="secondary">Check for requested actions</button
         ><button id="stop" class="stop">Stop browser control</button
         ><button id="disconnect" class="link">Disconnect this browser</button>

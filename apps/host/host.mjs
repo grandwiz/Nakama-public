@@ -1,3 +1,5 @@
+import { DeviceCommands } from "./device-commands.mjs";
+import { originId, forDelivery } from "./device-delivery.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import https from "node:https";
@@ -128,6 +130,7 @@ const ACTION_TYPES = [
   "browser_scroll",
   "browser_screenshot",
   "open_app",
+  "timer_start",
   "call",
   "sms",
   "calendar",
@@ -241,6 +244,7 @@ export class NakamaHost {
     this.boards = new PersonalBoards(this, { clock: this.boardClock });
     this.locations = new DeviceLocations(this);
     this.installedApps = new InstalledApps(this);
+    this.deviceCommands = new DeviceCommands(this);
     this.clockTimers = new ClockTimers(this, { clock: this.boardClock });
     await this.clockTimers.tick();
     this.localAssistant = new LocalAssistant(this);
@@ -467,7 +471,9 @@ export class NakamaHost {
       );
     if (mutation) this.activeMutations = (this.activeMutations || 0) + 1;
     try {
-      return await this.dispatchRequest(method, url, body, principal);
+      const result = await this.dispatchRequest(method, url, body, principal);
+      if (method === "POST" && ["/api/chat", "/api/device/commands"].includes(url)) return { ...result, deliveryDeviceId: originId(principal) };
+      return result;
     } finally {
       if (mutation) this.activeMutations--;
     }
@@ -829,12 +835,16 @@ export class NakamaHost {
       data.taskBoard = this.boards.taskState(principal);
       data.routineBoard = this.boards.routineState(principal);
       data.clock = this.clockTimers.public(principal);
+      if (principal.kind === "device") {
+        data.tasks = data.tasks.filter((record) => forDelivery(this.store.state, record, principal));
+        data.approvals = data.approvals.filter((record) => forDelivery(this.store.state, record, principal));
+        data.projectWorkflows = data.projectWorkflows.filter((record) => forDelivery(this.store.state, record, principal));
+      }
       if (principal.kind === "device")
         data.messages = data.messages.filter(
           (message) =>
             !message.ownerOnly &&
-            (!message.visibleToDeviceId ||
-              message.visibleToDeviceId === principal.id),
+            forDelivery(this.store.state, message, principal),
         );
       if (
         principal.kind === "device" &&
@@ -889,6 +899,10 @@ export class NakamaHost {
                 this.projectDeliveries.list(project.id, principal).runs,
             )
           : [];
+      if (principal.kind === "device") {
+        data.projectIntakes = data.projectIntakes.filter((record) => forDelivery(this.store.state, record, principal));
+        data.projectDeliveries = data.projectDeliveries.filter((record) => forDelivery(this.store.state, record, principal));
+      }
       data.connectionHandoffs = this.connectionHandoffs.public(principal);
       data.autonomousTasks = this.skills.canAccess(principal)
         ? this.autonomousTasks.list(principal).runs
@@ -1580,6 +1594,8 @@ export class NakamaHost {
     match = route.match(/^\/api\/connections\/([^/]+)(?:\/(test))?$/);
     if (match && method === "POST")
       return this.connection(match[1], match[2], body, principal);
+    if (route === "/api/device-targets" && method === "GET") return this.deviceCommands.directory(principal);
+    if (route === "/api/device/commands" && method === "POST") return this.deviceCommands.route(body, principal);
     if (route === "/api/device/actions" && method === "POST")
       return this.enqueueAction(body, principal);
     if (route === "/api/actions" && method === "GET")
@@ -1613,6 +1629,12 @@ export class NakamaHost {
         throw new ApiError(400, "Unknown action type filter.");
       return this.store.change((s) => {
         this.device(principal.id);
+        for (const action of s.actions) {
+          if (action.explicitTarget && ["pending", "dispatched"].includes(action.status)) {
+            try { this.deviceCommands.guard(action.explicitTarget, action.requestedBy === "desktop" ? OWNER : { kind: "device", id: action.requestedBy }); }
+            catch { action.status = "cancelled"; action.redeliveryStoppedAt = now(); }
+          }
+        }
         for (const action of s.actions)
           if (
             action.deviceId === principal.id &&
@@ -1636,7 +1658,7 @@ export class NakamaHost {
           action.status = "dispatched";
           action.dispatchedAt ||= now();
         }
-        return { actions: actions.map(({ deviceId, status, ...a }) => a) };
+        return { actions: actions.map(({ status, ...a }) => ({ ...a, deliveryDeviceId: a.requestedBy || "desktop" })) };
       });
     }
     match = route.match(/^\/api\/device\/actions\/([^/]+)\/result$/);
@@ -1694,7 +1716,9 @@ export class NakamaHost {
           content: `${device.name}: ${action.result} (${action.status})`,
           createdAt: now(),
           kind: "device_result",
+          actionId: action.id,
           sourceDeviceId: principal.id,
+          deliveryDeviceId: action.requestedBy || "desktop",
         });
         this.store.audit(
           s,
@@ -2006,12 +2030,9 @@ export class NakamaHost {
         });
       } else if (approval.type === "device_action")
         await this.store.change((s) => {
-          this.actionTarget(
-            op.deviceId,
-            approval.requestedBy === OWNER.id
-              ? OWNER
-              : { kind: "device", id: approval.requestedBy },
-          );
+          const requester = approval.requestedBy === OWNER.id ? OWNER : { kind: "device", id: approval.requestedBy };
+          if (op.explicitTarget) this.deviceCommands.guard(op.explicitTarget, requester);
+          else this.actionTarget(op.deviceId, requester);
           s.actions.push({
             ...op,
             expiresAt: new Date(Date.now() + 300000).toISOString(),
@@ -2251,9 +2272,7 @@ export class NakamaHost {
                 m.projectId === (project?.id || null) &&
                 !m.locationSensitive &&
                 !m.ownerOnly &&
-                (!m.visibleToDeviceId ||
-                  principal.kind === "owner" ||
-                  m.visibleToDeviceId === principal.id),
+                forDelivery(this.store.state, m, principal),
             )
             .slice(-10)
             .map((m) => `${m.role}: ${m.content}`)
@@ -2288,6 +2307,7 @@ export class NakamaHost {
           s.messages.push({
             id: uid(),
             role: "user",
+            deliveryDeviceId: originId(principal),
             content: message,
             projectId: project?.id || null,
             createdAt: now(),
@@ -3360,8 +3380,9 @@ export class NakamaHost {
     }
     return target;
   }
-  async enqueueAction(body, principal) {
-    const device = this.actionTarget(body.deviceId, principal);
+  async enqueueAction(body, principal, authorityToken) {
+    const authority = this.deviceCommands.authorized(authorityToken, body, principal);
+    const device = authority ? this.deviceCommands.guard(authority, principal) : this.actionTarget(body.deviceId, principal);
     const allowed =
       device.platform === "chrome"
         ? [
@@ -3389,7 +3410,7 @@ export class NakamaHost {
             "whatsapp_call",
             "discord_message",
           ];
-    if (!allowed.includes(body.type))
+    if (!(allowed.includes(body.type) || authority && body.type === "timer_start"))
       throw new ApiError(400, "Unsupported action for this device.");
     if (
       !body.args ||
@@ -3425,6 +3446,8 @@ export class NakamaHost {
       createdAt: now(),
       expiresAt: new Date(Date.now() + 300000).toISOString(),
       requestedBy: principal.id,
+      deliveryDeviceId: originId(principal),
+      ...(authority ? { explicitTarget: structuredClone(authority) } : {}),
     };
     if (this.store.state.config.confirmOrdinaryActions)
       return this.approval(
@@ -3435,7 +3458,8 @@ export class NakamaHost {
         principal,
       );
     await this.store.change((s) => {
-      this.actionTarget(action.deviceId, principal);
+      if (action.explicitTarget) this.deviceCommands.guard(action.explicitTarget, principal);
+      else this.actionTarget(action.deviceId, principal);
       s.actions.push({ ...action, status: "pending" });
       this.store.audit(
         s,

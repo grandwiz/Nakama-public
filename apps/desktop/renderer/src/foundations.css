@@ -290,3 +290,19 @@
     margin-bottom: 22px;
   }
 }
+
+.routine-targets {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 12px;
+  margin: 12px 0;
+  padding: 12px;
+}
+.routine-target-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.routine-target-choice input {
+  width: auto;
+}

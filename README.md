@@ -65,3 +65,7 @@ The blank checklist contains no personal acceptance results. Keep filled copies,
 ## Support
 
 If Nakama helps you, you can [support development with a coffee](https://buymeacoffee.com/nakamaai). Bug reports, documentation improvements and contributions are welcome. Do not include secrets or private screenshots in public issues.
+
+### Device destinations
+
+Replies and request notifications stay on the originating device. App commands and timers default to that device; name another paired device explicitly to target it. Alarms can select one or several Android devices. The Chrome extension now grants a whole ordinary-tab session instead of asking per tab. Update the PC, companions and extension together. Read [examples and setup](docs/device-routing.md).

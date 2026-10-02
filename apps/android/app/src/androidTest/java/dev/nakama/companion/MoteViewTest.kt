@@ -74,7 +74,7 @@ class MoteViewTest {
     @Test fun staleSnapshotCannotEarnAttentionSideEffectsAfterRevocation() {
         emulatorOnly()
         val identity = HostIdentity("https://fixture.invalid:43110", "0".repeat(64), "synthetic-only", "fixture-phone", "Fixture")
-        val snapshot = JSONObject("""{"devices":[{"id":"fixture-phone","permissions":{"googleAccess":true,"projectAccess":true}}],"tasks":[{"status":"running"}]}""")
+        val snapshot = JSONObject("""{"devices":[{"id":"fixture-phone","permissions":{"googleAccess":true,"projectAccess":true}}],"tasks":[{"status":"running","deliveryDeviceId":"fixture-phone"}]}""")
         MoteWorkSignals.clearHost()
         val oldRequest = SystemClock.elapsedRealtime()
         assertTrue(MoteWorkSignals.updateHost(identity, snapshot, oldRequest))
@@ -95,7 +95,7 @@ class MoteViewTest {
         MoteWorkSignals.clearHost()
         MoteWorkSignals.updateHost(identity, snapshot)
         assertEquals(MoteWorkState.IDLE, MoteWorkSignals.current(identity))
-        snapshot.put("tasks", org.json.JSONArray().put(JSONObject().put("status", "running")))
+        snapshot.put("tasks", org.json.JSONArray().put(JSONObject().put("status", "running").put("deliveryDeviceId", "fixture-phone")))
         MoteWorkSignals.updateHost(identity, snapshot)
         assertEquals(MoteWorkState.WORKING, MoteWorkSignals.current(identity))
         snapshot.getJSONArray("devices").getJSONObject(0).getJSONObject("permissions").put("googleAccess", false)

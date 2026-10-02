@@ -111,6 +111,10 @@ object LocalTimers {
     private fun engine(context: Context) = LocalTimerEngine(AndroidLocalTimerStorage(context), AndroidEffects(context), { moment(context) }, { UUID.randomUUID().toString() })
     @Synchronized fun snapshot(context: Context) = AndroidLocalTimerStorage(context).load()
     @Synchronized fun create(context: Context, seconds: Long, title: String = "") = engine(context).create(seconds, title)
+    @Synchronized internal fun createRemote(context: Context, seconds: Long, title: String, id: String): LocalTimer {
+        snapshot(context).firstOrNull { it.id == id }?.let { return it }
+        return LocalTimerEngine(AndroidLocalTimerStorage(context), AndroidEffects(context), { moment(context) }, { id }).create(seconds, title)
+    }
     @Synchronized fun change(context: Context, id: String, revision: Int, action: String) = engine(context).change(id, revision, action)
     @Synchronized fun restore(context: Context) { engine(context).restore() }
     @Synchronized fun receive(context: Context, intent: Intent) {

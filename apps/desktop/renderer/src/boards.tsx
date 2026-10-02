@@ -24,6 +24,9 @@ import { AutonomousTasksPanel } from "./autonomous-tasks";
 import "./foundations.css";
 
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const routineTargets = (routine: Routine): string[] =>
+  routine.targetDeviceIds ||
+  (routine.targetDeviceId ? [routine.targetDeviceId] : []);
 
 export function BoardsPage({
   initialTab = "tasks",
@@ -272,7 +275,7 @@ function RoutinesBoard() {
   );
   const [weekdays, setWeekdays] = useState([1, 2, 3, 4, 5]);
   const [kind, setKind] = useState<Routine["kind"]>("reminder");
-  const [targetDeviceId, setTargetDeviceId] = useState("");
+  const [targetDeviceIds, setTargetDeviceIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const routines = state.routineBoard?.routines || [];
   const devices = state.devices.filter(
@@ -281,6 +284,16 @@ function RoutinesBoard() {
       device.permissions?.googleAccess !== false &&
       device.permissions?.projectAccess !== false,
   );
+  const invalidTargets = targetDeviceIds.some(
+    (id) =>
+      !(id === "desktop" && kind === "reminder") &&
+      !devices.some((device) => device.id === id),
+  );
+  const targetName = (id: string) =>
+    id === "desktop"
+      ? "This PC"
+      : state.devices.find((device) => device.id === id)?.name ||
+        "Unavailable device";
   function reset() {
     setEditing(undefined);
     setTitle("");
@@ -288,7 +301,7 @@ function RoutinesBoard() {
     setTime("07:00");
     setWeekdays([1, 2, 3, 4, 5]);
     setKind("reminder");
-    setTargetDeviceId("");
+    setTargetDeviceIds([]);
   }
   async function change(method: string, path: string, body?: unknown) {
     setBusy(true);
@@ -329,17 +342,28 @@ function RoutinesBoard() {
             </p>
             <p className="small-copy">
               {routine.kind === "alarm" ? "Alarm" : "Reminder"}
-              {routine.targetDeviceId
-                ? ` · ${state.devices.find((device) => device.id === routine.targetDeviceId)?.name || "Paired device"}`
-                : " · Shared devices"}
+              {routineTargets(routine).length
+                ? ` · ${routineTargets(routine).map(targetName).join(", ")}`
+                : " · This PC"}
             </p>
-            {routine.kind === "alarm" && (
-              <p className="small-copy" role="status">
-                {routine.deviceSchedule
-                  ? `${routine.deviceSchedule.status.replaceAll("_", " ")} · ${routine.deviceSchedule.detail} · Reported ${new Date(routine.deviceSchedule.reportedAt).toLocaleString()}`
-                  : "Waiting for the phone to confirm its alarm schedule."}
-              </p>
-            )}
+            {routine.kind === "alarm" &&
+              routineTargets(routine).map((id) => {
+                const receipt =
+                  routine.deviceSchedules?.[id] ||
+                  (routine.deviceSchedule?.deviceId === id
+                    ? routine.deviceSchedule
+                    : undefined);
+                const current =
+                  receipt?.expectedUpdatedAt === routine.updatedAt;
+                return (
+                  <p className="small-copy" role="status" key={id}>
+                    {targetName(id)}:{" "}
+                    {receipt && current
+                      ? `${receipt.status.replaceAll("_", " ")} · ${receipt.detail} · Reported ${new Date(receipt.reportedAt).toLocaleString()}`
+                      : "Waiting for this device to confirm the current alarm schedule."}
+                  </p>
+                );
+              })}
             <Toggle
               checked={routine.enabled}
               disabled={busy}
@@ -365,7 +389,7 @@ function RoutinesBoard() {
                   setTimeZone(routine.timeZone);
                   setWeekdays(routine.weekdays);
                   setKind(routine.kind);
-                  setTargetDeviceId(routine.targetDeviceId || "");
+                  setTargetDeviceIds(routineTargets(routine));
                 }}
               >
                 <Pencil size={14} /> Edit
@@ -398,7 +422,12 @@ function RoutinesBoard() {
         <form
           onSubmit={async (event) => {
             event.preventDefault();
-            if (busy) return;
+            if (
+              busy ||
+              invalidTargets ||
+              (kind === "alarm" && !targetDeviceIds.length)
+            )
+              return;
             const result = await change(
               editing ? "PATCH" : "POST",
               `/api/routines${editing ? `/${encodeURIComponent(editing)}` : ""}`,
@@ -409,7 +438,7 @@ function RoutinesBoard() {
                 time,
                 timeZone,
                 weekdays,
-                targetDeviceId: targetDeviceId || null,
+                targetDeviceIds,
                 ...(!editing ? { enabled: true } : {}),
               },
             );
@@ -449,10 +478,15 @@ function RoutinesBoard() {
             <label className="field">
               Type
               <select
+                aria-label="Routine type"
                 value={kind}
-                onChange={(event) =>
-                  setKind(event.target.value as Routine["kind"])
-                }
+                onChange={(event) => {
+                  setKind(event.target.value as Routine["kind"]);
+                  if (event.target.value === "alarm")
+                    setTargetDeviceIds((current) =>
+                      current.filter((id) => id !== "desktop"),
+                    );
+                }}
               >
                 <option value="reminder">Reminder</option>
                 <option value="alarm">Alarm</option>
@@ -488,25 +522,96 @@ function RoutinesBoard() {
               </button>
             ))}
           </fieldset>
-          <label className="field">
-            Notify
-            <select
-              required={kind === "alarm"}
-              value={targetDeviceId}
-              onChange={(event) => setTargetDeviceId(event.target.value)}
-            >
-              <option value="">
-                {kind === "alarm"
-                  ? "Choose the phone for this alarm"
-                  : "All permitted devices"}
-              </option>
-              {devices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.name}
-                </option>
+          <fieldset className="routine-targets" disabled={busy}>
+            <legend>
+              {kind === "alarm"
+                ? "Ring on these devices"
+                : "Notify on these devices"}
+            </legend>
+            <p className="small-copy">
+              {kind === "alarm"
+                ? "Choose one or more phones or tablets."
+                : "Leave empty to notify this PC only."}
+            </p>
+            {kind === "reminder" && (
+              <label className="routine-target-choice">
+                <input
+                  type="checkbox"
+                  aria-label="Notify This PC"
+                  checked={targetDeviceIds.includes("desktop")}
+                  onChange={() =>
+                    setTargetDeviceIds((current) =>
+                      current.includes("desktop")
+                        ? current.filter((id) => id !== "desktop")
+                        : [...current, "desktop"],
+                    )
+                  }
+                />
+                This PC
+              </label>
+            )}
+            {devices.map((device) => {
+              const selected = targetDeviceIds.includes(device.id);
+              const duplicate =
+                devices.filter((other) => other.name === device.name).length >
+                1;
+              const name = duplicate
+                ? `${device.name} (${device.id.slice(-6)})`
+                : device.name;
+              return (
+                <label key={device.id} className="routine-target-choice">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    aria-label={`Notify ${name}`}
+                    disabled={!selected && targetDeviceIds.length >= 10}
+                    onChange={() =>
+                      setTargetDeviceIds((current) =>
+                        current.includes(device.id)
+                          ? current.filter((id) => id !== device.id)
+                          : [...current, device.id],
+                      )
+                    }
+                  />
+                  {name}
+                </label>
+              );
+            })}
+            {targetDeviceIds
+              .filter(
+                (id) =>
+                  id !== "desktop" &&
+                  !devices.some((device) => device.id === id),
+              )
+              .map((id) => (
+                <label key={id} className="routine-target-choice">
+                  <input
+                    type="checkbox"
+                    checked
+                    aria-label={`Remove unavailable target ${targetName(id)}`}
+                    onChange={() =>
+                      setTargetDeviceIds((current) =>
+                        current.filter((value) => value !== id),
+                      )
+                    }
+                  />
+                  {targetName(id)} (unavailable; clear this selection before
+                  saving)
+                </label>
               ))}
-            </select>
-          </label>
+            {!devices.length && (
+              <p className="small-copy">
+                Pair a phone or tablet and enable its shared access to select
+                it.
+              </p>
+            )}
+            {invalidTargets && (
+              <p role="alert" className="inline-error">
+                A selected device is no longer available. Choose the intended
+                targets again.
+              </p>
+            )}
+          </fieldset>
           <p className="small-copy">
             The host records reminders while running. Open Nakama on your phone
             to sync alarm changes; Android must allow notifications and exact
@@ -519,7 +624,8 @@ function RoutinesBoard() {
               disabled={
                 !title.trim() ||
                 !weekdays.length ||
-                (kind === "alarm" && !targetDeviceId)
+                invalidTargets ||
+                (kind === "alarm" && !targetDeviceIds.length)
               }
             >
               {editing ? "Save routine" : "Add routine"}

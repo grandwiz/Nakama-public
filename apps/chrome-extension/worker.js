@@ -71,22 +71,9 @@ async function screenshot(action, tab, permission) {
     event.addListener(callback);
     listeners.push([event, callback]);
   };
-  const sameSession = async () => {
-    const [{ pairing: currentPairing }, { allowedTabs = {} }] =
-      await Promise.all([
-        chrome.storage.local.get("pairing"),
-        chrome.storage.session.get("allowedTabs"),
-      ]);
-    const current = allowedTabs[tab.id];
-    return (
-      !changed &&
-      expiresAt > Date.now() &&
-      currentPairing?.token === pairing.token &&
-      current?.origin === permission.origin &&
-      current?.expiresAt === permission.expiresAt &&
-      current.expiresAt > Date.now()
-    );
-  };
+  const sameSession = async () =>
+    !changed && expiresAt > Date.now() &&
+    await sessionCurrent(permission.session);
   const inspectTab = async () => {
     const [current, window, active] = await Promise.all([
       chrome.tabs.get(tab.id),
@@ -109,6 +96,7 @@ async function screenshot(action, tab, permission) {
       ["http:", "https:"].includes(url.protocol) &&
       !url.username &&
       !url.password &&
+      ordinaryTab(current) &&
       url.origin === permission.origin &&
       window.id === tab.windowId &&
       window.focused === true &&
@@ -180,15 +168,11 @@ async function screenshot(action, tab, permission) {
         updates.pairing.newValue?.token !== pairing.token
       )
         changed = true;
-      if (area === "session" && updates.allowedTabs) {
-        const current = updates.allowedTabs.newValue?.[tab.id];
-        if (
-          current?.origin !== permission.origin ||
-          current?.expiresAt !== permission.expiresAt
-        )
-          changed = true;
-      }
+      if (area === "session" && updates.browserSession &&
+          updates.browserSession.newValue?.id !== permission.session.id)
+        changed = true;
     });
+    listen(chrome.permissions.onRemoved, () => { changed = true; });
     if (!(await inspectTab()))
       return stopped(
         "Keep this allowed tab active in a focused, normal Chrome window. Nakama will not switch tabs or windows for a screenshot.",
@@ -216,7 +200,7 @@ async function screenshot(action, tab, permission) {
       return {
         status: "needs_user",
         message:
-          "Chrome could not capture this tab. Open the Nakama extension on the tab, choose Allow this tab, then request a new screenshot.",
+          "Chrome could not capture this tab. Open the Nakama extension, enable all ordinary tabs and grant Chrome website access, then request a new screenshot.",
       };
     }
     // Discard captured pixels if anything changed, including a transient switch
@@ -468,7 +452,7 @@ async function api(path, body, method = body ? "POST" : "GET") {
     const { pairing: current } = await chrome.storage.local.get("pairing");
     if (current?.token === pairing.token) {
       await chrome.storage.local.remove(["pairing", "receipts"]);
-      await chrome.storage.session.remove("allowedTabs");
+      await chrome.storage.session.remove(["browserSession", "allowedTabs"]);
     } else {
       throw new Error(
         "This browser connection changed. Old queued actions were stopped.",
@@ -486,126 +470,75 @@ async function log(message) {
     lastUpdated: new Date().toISOString(),
   });
 }
+const ALL_SITES = { origins: ["<all_urls>"] };
+const SESSION_MS = 2 * 60 * 60 * 1000;
+function ordinaryUrl(value) {
+  try {
+    const url = new URL(value);
+    return typeof value === "string" && value.length <= 2048 &&
+      ["http:", "https:"].includes(url.protocol) && !url.username && !url.password &&
+      !(url.port === "43111" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) &&
+      !["chrome.google.com", "chromewebstore.google.com"].includes(url.hostname) &&
+      !/\b(log[ -]?in|sign[ -]?in|checkout|payment|password|secrets?|api[ _-]?keys?|access[ _-]?token)\b/i.test(
+        decodeURIComponent(url.pathname + url.search));
+  } catch { return false; }
+}
+function ordinaryTab(tab) {
+  return !!tab && Number.isSafeInteger(tab.id) && tab.id > 0 && !tab.incognito &&
+    !tab.pendingUrl && tab.status === "complete" && !tab.discarded && !tab.frozen && ordinaryUrl(tab.url);
+}
+async function activeSession() {
+  const [{ browserSession, browserControlEpoch = "" }, { pairing }, granted] = await Promise.all([
+    chrome.storage.session.get(["browserSession", "browserControlEpoch"]), chrome.storage.local.get("pairing"),
+    chrome.permissions.contains(ALL_SITES),
+  ]);
+  return granted && pairing?.token && browserSession?.pairingToken === pairing.token &&
+    browserSession.controlEpoch === browserControlEpoch &&
+    typeof browserSession.id === "string" && browserSession.id.length > 0 &&
+    Number.isFinite(browserSession.expiresAt) && browserSession.expiresAt > Date.now() &&
+    browserSession.expiresAt <= Date.now() + SESSION_MS ? browserSession : null;
+}
+async function sessionCurrent(session) {
+  const current = await activeSession();
+  return !!current && current.id === session.id && current.pairingToken === session.pairingToken &&
+    current.expiresAt === session.expiresAt;
+}
 export async function execute(action) {
-  if (
-    action.type === "browser_select" &&
-    (!Number.isSafeInteger(action.args?.tabId) || action.args.tabId <= 0)
-  )
-    return {
-      status: "blocked",
-      message: "Choose a positive, whole tab ID for the dropdown.",
-    };
-  const { allowedTabs = {} } = await chrome.storage.session.get("allowedTabs");
-  const permitted = Object.entries(allowedTabs).filter(
-    ([, value]) =>
-      Number.isFinite(value.expiresAt) && value.expiresAt > Date.now(),
-  );
+  const blocked = (message) => ({ status: "blocked", message });
+  const session = await activeSession();
+  if (!session) return blocked("Browser control is off or expired. Open Nakama's extension and enable all ordinary tabs; grant Chrome website access if asked.");
+  const actionExpiry = Date.parse(action.expiresAt || "");
+  if (!Number.isFinite(actionExpiry) || actionExpiry <= Date.now())
+    return blocked("This browser action expired. Request a fresh action.");
   if (action.type === "browser_tabs") {
-    const tabs = await chrome.tabs.query({});
-    const allowed = tabs.filter((t) => {
-      try {
-        return permitted.some(
-          ([id, p]) =>
-            Number(id) === t.id && new URL(t.url).origin === p.origin,
-        );
-      } catch {
-        return false;
-      }
-    });
-    return {
-      status: "completed",
-      message: `${allowed.length} permitted tab(s) available.`,
-      data: {
-        tabs: allowed.map((t) => ({ id: t.id, title: t.title, url: t.url })),
-      },
-    };
+    const tabs = (await chrome.tabs.query({})).filter(ordinaryTab);
+    if (!(await sessionCurrent(session))) return blocked("Browser control stopped while tabs were being checked.");
+    return { status: "completed", message: `${tabs.length} ordinary tab(s) available in this browser session.`,
+      data: { tabs: tabs.map((tab) => ({ id: tab.id, title: String(tab.title || "").slice(0, 200), url: tab.url })) } };
   }
-  const tabId = Number(action.args.tabId);
-  if (!Number.isInteger(tabId)) throw new Error("Specify a tab ID.");
-  const permission = allowedTabs[tabId];
-  if (
-    !permission ||
-    !Number.isFinite(permission.expiresAt) ||
-    permission.expiresAt <= Date.now()
-  )
-    return {
-      status: "blocked",
-      message:
-        "Open this tab and choose Allow this tab in the Nakama extension.",
-    };
-  const tab = await chrome.tabs.get(tabId),
-    url = new URL(tab.url);
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.origin !== permission.origin
-  )
-    return {
-      status: "blocked",
-      message: "This tab changed website. Allow it again before continuing.",
-    };
-  const current = (await chrome.storage.session.get("allowedTabs"))
-    .allowedTabs?.[tabId];
-  if (
-    !current ||
-    current.origin !== permission.origin ||
-    current.expiresAt !== permission.expiresAt
-  )
-    return {
-      status: "blocked",
-      message:
-        "Browser control stopped or changed while this action was being checked.",
-    };
+  const tabId = action.args?.tabId;
+  if (!Number.isSafeInteger(tabId) || tabId <= 0)
+    return blocked("Choose a positive, whole tab ID.");
+  const tab = await chrome.tabs.get(tabId);
+  if (!ordinaryTab(tab)) return blocked("This tab is loading, private, protected or unavailable. Choose an ordinary website tab after it finishes loading.");
+  const permission = { origin: new URL(tab.url).origin, url: tab.url,
+    expiresAt: Math.min(session.expiresAt, actionExpiry), session };
+  if (!(await sessionCurrent(session)) || actionExpiry <= Date.now()) return blocked("Browser control stopped, changed or the action expired while it was being checked.");
   if (action.type === "browser_navigate") {
+    if (!ordinaryUrl(action.args.url)) return blocked("Only ordinary website navigation is supported; private, credential, payment and browser settings pages stay under your control.");
     const destination = new URL(action.args.url);
-    if (
-      !["https:", "http:"].includes(destination.protocol) ||
-      destination.username ||
-      destination.password
-    )
-      throw new Error("Only normal website navigation is supported.");
-    if (destination.origin !== permission.origin)
-      return {
-        status: "blocked",
-        message:
-          "Navigation to a different website requires allowing that website first.",
-      };
-    if (
-      /\b(deploy|deployment|publish|delete|destroy|remove|terminate|promote|release)\b/i.test(
-        decodeURIComponent(destination.pathname + destination.search).replace(
-          /[_-]/g,
-          " ",
-        ),
-      )
-    )
-      return {
-        status: "needs_user",
-        message:
-          "This address may publish, deploy or delete something. Open and review it yourself; Nakama will not navigate to it automatically.",
-      };
+    if (/\b(deploy|deployment|publish|delete|destroy|remove|terminate|promote|release)\b/i.test(
+      decodeURIComponent(destination.pathname + destination.search).replace(/[_-]/g, " ")))
+      return { status: "needs_user", message: "This address may publish, deploy or delete something. Open and review it yourself; Nakama will not navigate to it automatically." };
     await chrome.tabs.update(tabId, { url: destination.href });
-    return {
-      status: "started",
-      message:
-        "Navigation started. Read the page again to verify its final state.",
-    };
+    return { status: "started", message: "Navigation started. Read the page again to verify its final state." };
   }
-  if (action.type === "browser_screenshot")
-    return screenshot(action, tab, permission);
-  const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: pageAction,
-    args: [
-      action.type,
-      action.args,
-      { origin: permission.origin, expiresAt: permission.expiresAt },
-    ],
-  });
-  return (
-    results[0]?.result || {
-      status: "failed",
-      message: "The page did not return a result.",
-    }
-  );
+  if (action.type === "browser_screenshot") return screenshot(action, tab, permission);
+  const results = await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] },
+    func: pageAction, args: [action.type, action.args,
+      { origin: permission.origin, url: permission.url, expiresAt: permission.expiresAt }] });
+  if (!(await sessionCurrent(session))) return blocked("Browser control stopped while this action was in flight. Its effect may already have occurred; no page data was returned.");
+  return results[0]?.result || { status: "failed", message: "The page did not return a result." };
 }
 export function pageAction(type, args, permission) {
   // This check runs in the document itself: the tab can navigate while the
@@ -613,13 +546,14 @@ export function pageAction(type, args, permission) {
   if (
     !permission ||
     location.origin !== permission.origin ||
+    (permission.url && location.href !== permission.url) ||
     !Number.isFinite(permission.expiresAt) ||
     permission.expiresAt <= Date.now()
   )
     return {
       status: "blocked",
       message:
-        "The document changed or this tab permission expired. Allow it again.",
+        "The document changed or browser control expired. Read the current page again in an enabled session.",
     };
   const visible = (node) => {
     const rect = node.getBoundingClientRect(),
@@ -1178,10 +1112,14 @@ chrome.runtime.onStartup.addListener(() =>
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "nakama-poll") poll();
 });
-chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const { allowedTabs = {} } = await chrome.storage.session.get("allowedTabs");
-  delete allowedTabs[tabId];
-  await chrome.storage.session.set({ allowedTabs });
+// Removing Chrome's website grant invalidates the active session. Granting it
+// again never silently restores that session; the popup must explicitly enable it.
+chrome.permissions.onRemoved.addListener(async () => {
+  if (!(await chrome.permissions.contains(ALL_SITES))) {
+    await chrome.storage.session.set({ browserControlEpoch: crypto.randomUUID() });
+    await chrome.storage.session.remove(["browserSession", "allowedTabs"]);
+    await log("Chrome website access was removed. Browser control stopped.");
+  }
 });
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id) return;

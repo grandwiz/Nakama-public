@@ -12,7 +12,7 @@ object MoteWorkSignals {
     }
     @Synchronized fun updateHost(identity: HostIdentity, snapshot: JSONObject, requestStartedAt: Long = SystemClock.elapsedRealtime()): Boolean {
         val records = listOf("tasks", "projectWorkflows", "projectIntakes", "projectDeliveries", "autonomousTasks")
-            .flatMap { key -> snapshot.objects(key).map { MoteWorkRecord(it.optString("status"), it.optString("stage")) } }
+            .flatMap { key -> snapshot.objects(key).filter { DeviceDelivery.addressedTo(it, identity.deviceId) }.map { MoteWorkRecord(it.optString("status"), it.optString("stage")) } }
         return tracker.updateHost(AttentionPolicy.scope(identity), MoteWorkPolicy.classify(records, permitted(identity, snapshot)), requestStartedAt)
     }
     @Synchronized fun clearHost(identity: HostIdentity? = null, requestStartedAt: Long? = null): Boolean = tracker.clearHost(identity?.let(AttentionPolicy::scope), requestStartedAt)

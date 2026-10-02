@@ -5,6 +5,7 @@ import android.app.AlarmManager
 import android.content.pm.PackageManager
 import android.speech.SpeechRecognizer
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +41,14 @@ fun FoundationsPanel(
     var error by remember { mutableStateOf("") }
     var editTask by remember { mutableStateOf<JSONObject?>(null) }
     var editRoutine by remember { mutableStateOf<JSONObject?>(null) }
+    var deviceDirectory by remember { mutableStateOf(emptyList<DeviceTarget>()) }
+    var directoryError by remember { mutableStateOf("") }
+    LaunchedEffect(page, allowed, deviceId) {
+        if (!allowed) { deviceDirectory = emptyList(); directoryError = ""; return@LaunchedEffect }
+        if (page == "Routines") try {
+            deviceDirectory = DeviceCommandRouting.targets(request("GET", "/api/device-targets", null)); directoryError = ""
+        } catch (_: Exception) { directoryError = "Could not refresh device names. Existing selected targets are kept." }
+    }
     fun mutate(method: String, path: String, body: JSONObject? = null) {
         if (!allowed || busy) return
         busy = true; error = ""
@@ -79,15 +88,21 @@ fun FoundationsPanel(
                 item { Text("Routines and alarms", style = MaterialTheme.typography.titleLarge); Text("Reminders are recorded on your PC. Phone alarms need Alarms & reminders permission and Sync phone alarms. Changes made while the phone is offline take effect after its next sync.", style = MaterialTheme.typography.bodySmall) }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { Button(onClick = { editRoutine = JSONObject() }, enabled = !busy) { Text("Add routine") }; OutlinedButton(onClick = { localAction("sync_alarms") }) { Text("Sync phone alarms") }; OutlinedButton(onClick = { localAction("alarm_permission") }) { Text("Alarm permission") }; OutlinedButton(onClick = { localAction("silence_alarms") }) { Text("Silence ringing alarms") } } }
                 item { Text(if (context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()) "Exact alarm permission available. Notification volume and Do Not Disturb still apply." else "Exact alarms need your Android permission.", style = MaterialTheme.typography.bodySmall) }
-                items(state.optJSONObject("routineBoard")?.objects("occurrences").orEmpty().filter { it.optString("status") == "pending" }, key = { "occurrence-${it.optString("id")}" }) { occurrence ->
+                items(state.optJSONObject("routineBoard")?.objects("occurrences").orEmpty().filter { it.optString("status") == "pending" && DeviceDelivery.addressedTo(it, deviceId.orEmpty()) }, key = { "occurrence-${it.optString("id")}" }) { occurrence ->
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(12.dp)) { Text("Due: ${occurrence.optString("title")}"); Text(occurrence.optString("scheduledFor"), style = MaterialTheme.typography.bodySmall); TextButton(onClick = { mutate("POST", "/api/routines/occurrences/${occurrence.optString("id")}/ack", JSONObject()) }) { Text("Acknowledge") } } }
                 }
                 items(state.optJSONObject("routineBoard")?.objects("routines").orEmpty(), key = { it.optString("id") }) { routine ->
                     Surface(modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = tween(MotionPolicy.duration(motion, 220))), color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(12.dp)) {
                         Row { Column(Modifier.weight(1f)) { Text(routine.optString("title"), style = MaterialTheme.typography.titleSmall); Text("${routine.optString("kind")} · ${routine.optString("time")} · ${routine.optString("timeZone")}", style = MaterialTheme.typography.bodySmall) }; Switch(routine.optBoolean("enabled"), { mutate("PATCH", "/api/routines/${routine.optString("id")}", JSONObject().put("enabled", it)) }, enabled = !busy) }
                         if (routine.optString("details").isNotBlank()) Text(routine.optString("details"))
-                        val schedule = routine.optJSONObject("deviceSchedule")
-                        if (routine.optString("kind") == "alarm") Text(schedule?.optString("detail").orEmpty().ifBlank { "Phone scheduling has not been confirmed. Sync on the target phone." }, style = MaterialTheme.typography.bodySmall)
+                        if (routine.optString("kind") == "alarm") {
+                            DeviceDelivery.alarmTargets(routine).forEach { targetId ->
+                                val name = deviceDirectory.firstOrNull { it.id == targetId }?.name ?: if (targetId == deviceId) "This device" else "Unavailable target: $targetId"
+                                val receipt = DeviceDelivery.alarmReceipt(routine, targetId)
+                                Text("$name: " + if (receipt == null) "Pending · sync alarms on this device." else receipt.optString("status") + " · " + receipt.optString("detail"), style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (deviceId !in DeviceDelivery.alarmTargets(routine)) Text("This device is not an alarm target. It will not ring here.", style = MaterialTheme.typography.bodySmall)
+                        }
                         Row { TextButton(onClick = { editRoutine = routine }, enabled = !busy) { Text("Edit") }; TextButton(onClick = { mutate("DELETE", "/api/routines/${routine.optString("id")}") }, enabled = !busy) { Text("Delete routine") } }
                     } }
                 }
@@ -131,18 +146,37 @@ fun FoundationsPanel(
     editRoutine?.let { routine ->
         var title by remember(routine) { mutableStateOf(routine.optString("title")) }; var details by remember(routine) { mutableStateOf(routine.optString("details")) }
         var time by remember(routine) { mutableStateOf(routine.optString("time").ifBlank { "09:00" }) }; var kind by remember(routine) { mutableStateOf(routine.optString("kind").ifBlank { "reminder" }) }
+        var targetIds by remember(routine) { mutableStateOf(DeviceDelivery.alarmTargets(routine).ifEmpty { if (routine.optString("id").isBlank() || routine.optString("kind") != "alarm") setOfNotNull(deviceId) else emptySet() }) }
+        val deviceTargets = deviceDirectory.filter { it.platform == "android" }
         val weekdayArray = routine.optJSONArray("weekdays")
         var days by remember(routine) { mutableStateOf(if (weekdayArray == null) (0..6).toSet() else (0 until weekdayArray.length()).map { weekdayArray.optInt(it) }.toSet()) }
-        AlertDialog(onDismissRequest = { editRoutine = null }, title = { Text("Routine") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        AlertDialog(onDismissRequest = { editRoutine = null }, title = { Text("Routine") }, text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(title, { title = it.take(160) }, label = { Text("Title") }); OutlinedTextField(details, { details = it.take(3000) }, label = { Text("Details") }, maxLines = 2)
             OutlinedTextField(time, { time = it.take(5) }, label = { Text("Time · HH:mm") }, singleLine = true)
             Text(routine.optString("timeZone").ifBlank { ZoneId.systemDefault().id }, style = MaterialTheme.typography.bodySmall)
-            Row { listOf("reminder", "alarm").forEach { item -> FilterChip(selected = kind == item, onClick = { kind = item }, label = { Text(item) }) } }
+            Row { listOf("reminder", "alarm").forEach { item -> FilterChip(selected = kind == item, onClick = { kind = item; if (item == "alarm") targetIds = targetIds.filterNot { id -> id == "desktop" || deviceDirectory.any { it.id == id && it.platform != "android" } }.toSet() }, label = { Text(item) }) } }
             Row(Modifier.horizontalScroll(rememberScrollState())) { listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEachIndexed { index, day -> FilterChip(selected = index in days, onClick = { days = if (index in days) days - index else days + index }, label = { Text(day) }) } }
-            if (kind == "alarm") Text("Target: the selected phone (new alarms use this phone). Sync there after saving to register the alarm with Android.", style = MaterialTheme.typography.bodySmall)
-        } }, confirmButton = { TextButton(enabled = title.isNotBlank() && days.isNotEmpty() && time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) && !busy, onClick = {
+            if (kind == "alarm") {
+                Text("Ring on selected devices", style = MaterialTheme.typography.labelLarge)
+                Text("New alarms select only this device. Select more devices explicitly, then sync alarms on each target. Offline devices update after their next sync.", style = MaterialTheme.typography.bodySmall)
+                val choices = (deviceTargets + targetIds.filter { id -> deviceTargets.none { it.id == id } && id != "desktop" && deviceDirectory.none { it.id == id && it.platform != "android" } }.map { id -> DeviceTarget(id, if (id == deviceId) "This device" else "Unavailable target: $id", "unknown", false) }).distinctBy { it.id }
+                Column {
+                    choices.forEach { target -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Checkbox(target.id in targetIds, { checked -> targetIds = if (checked && targetIds.size < 10) targetIds + target.id else targetIds - target.id }, enabled = target.id in targetIds || targetIds.size < 10)
+                        Text(target.name + if (target.id == deviceId && target.name != "This device") " (this device)" else if (!target.connected && target.id != deviceId) " (offline)" else "")
+                    } }
+                }
+                targetIds.filter { id -> id == "desktop" || deviceDirectory.any { it.id == id && it.platform != "android" } }.forEach { id ->
+                    Text("Unsupported alarm target: $id", color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { targetIds = targetIds - id }) { Text("Remove unsupported target") }
+                }
+                Text("Choose up to 10 devices.", style = MaterialTheme.typography.bodySmall)
+                if (directoryError.isNotBlank()) Text(directoryError, color = MaterialTheme.colorScheme.error)
+                if (targetIds.isEmpty()) Text("Choose at least one device.", color = MaterialTheme.colorScheme.error)
+            }
+        } }, confirmButton = { TextButton(enabled = title.isNotBlank() && days.isNotEmpty() && (kind != "alarm" || targetIds.size in 1..10) && time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) && !busy, onClick = {
             val id = routine.optString("id")
-            mutate(if (id.isBlank()) "POST" else "PATCH", "/api/routines" + if (id.isBlank()) "" else "/$id", JSONObject().put("title", title.trim()).put("details", details).put("kind", kind).put("time", time).put("timeZone", routine.optString("timeZone").ifBlank { ZoneId.systemDefault().id }).put("weekdays", JSONArray(days.sorted())).put("enabled", routine.optBoolean("enabled", true)).put("targetDeviceId", if (kind == "alarm") routine.optString("targetDeviceId").takeIf { it.isNotBlank() && it != "null" } ?: deviceId else JSONObject.NULL)); editRoutine = null
+            mutate(if (id.isBlank()) "POST" else "PATCH", "/api/routines" + if (id.isBlank()) "" else "/$id", JSONObject().put("title", title.trim()).put("details", details).put("kind", kind).put("time", time).put("timeZone", routine.optString("timeZone").ifBlank { ZoneId.systemDefault().id }).put("weekdays", JSONArray(days.sorted())).put("enabled", routine.optBoolean("enabled", true)).put("targetDeviceIds", JSONArray(targetIds.sorted()))); editRoutine = null
         }) { Text("Save routine") } }, dismissButton = { TextButton(onClick = { editRoutine = null }) { Text("Cancel") } })
     }
 }

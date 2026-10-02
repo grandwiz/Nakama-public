@@ -1,3 +1,4 @@
+import { forDelivery, originId } from "./device-delivery.mjs";
 import { assertPersonalAccess } from "./personal-access.mjs";
 
 // Notifications carry generic descriptions and stable record IDs, never question
@@ -17,7 +18,7 @@ export function publicAttention(
   }
   const items = [];
   for (const monitor of monitoring.monitors || [])
-    if (monitor.attentionId && monitor.status === "attention")
+    if (monitor.attentionId && monitor.status === "attention" && (forDelivery(state, monitor, principal) || monitor.sharedDeviceIds?.includes(originId(principal))))
       items.push({
         id: `monitor:${monitor.id}:${monitor.attentionId}`,
         kind: "monitor",
@@ -39,7 +40,7 @@ export function publicAttention(
         "failed",
         "interrupted",
         "awaiting_install_approval",
-      ].includes(request.status)
+      ].includes(request.status) && forDelivery(state, request, principal)
     )
       items.push({
         id: `maintenance:${request.id}:${request.revision}`,
@@ -51,7 +52,7 @@ export function publicAttention(
   for (const run of state.autonomousTasks || []) {
     if (
       run.status !== "awaiting_answers" ||
-      (principal.kind === "device" && run.requestedBy !== principal.id)
+      !forDelivery(state, run, principal)
     )
       continue;
     for (const question of run.questions || [])
@@ -67,7 +68,7 @@ export function publicAttention(
         });
   }
   for (const workflow of state.projectWorkflows || []) {
-    if (workflow.status !== "awaiting_answers") continue;
+    if (workflow.status !== "awaiting_answers" || !forDelivery(state, workflow, principal)) continue;
     for (const question of workflow.questions || [])
       if (!question.answer)
         items.push({
@@ -81,7 +82,7 @@ export function publicAttention(
         });
   }
   for (const delivery of state.projectDeliveries || [])
-    if (delivery.status === "awaiting_answers")
+    if (delivery.status === "awaiting_answers" && forDelivery(state, delivery, principal))
       for (const q of delivery.questions || [])
         if (!q.answer)
           items.push({
@@ -94,7 +95,7 @@ export function publicAttention(
             createdAt: delivery.updatedAt,
           });
   for (const intake of state.projectIntakes || []) {
-    if (intake.status !== "awaiting_answers") continue;
+    if (intake.status !== "awaiting_answers" || !forDelivery(state, intake, principal)) continue;
     for (const question of intake.questions || [])
       if (!question.answer)
         items.push({
@@ -109,7 +110,7 @@ export function publicAttention(
   }
   for (const session of browser?.sessions || [])
     if (
-      session.status === "attention" ||
+      session.status === "attention" && forDelivery(state, session, principal) ||
       (session.sharedDeviceId === principal.id &&
         session.status === "human_control")
     )
@@ -123,7 +124,7 @@ export function publicAttention(
         createdAt: session.updatedAt,
       });
   for (const request of connectionRequests)
-    if (request.status === "waiting")
+    if (request.status === "waiting" && forDelivery(state, request, principal))
       items.push({
         id: `connection:${request.id}`,
         kind: "login",
@@ -134,6 +135,7 @@ export function publicAttention(
   for (const approval of state.approvals || [])
     if (
       approval.status === "pending" &&
+      (principal.kind === "owner" || forDelivery(state, approval, principal)) &&
       Date.parse(approval.expiresAt) > Date.now()
     )
       items.push({
@@ -144,7 +146,7 @@ export function publicAttention(
         createdAt: approval.createdAt,
       });
   for (const timer of state.clock?.timers || [])
-    if (timer.status === "finished" && (principal.kind === "owner" || timer.requestedBy === principal.id))
+    if (timer.status === "finished" && (timer.targetDeviceId || timer.requestedBy || "desktop") === originId(principal))
       items.push({ id: `timer:${timer.id}`, kind: "timer", title: "A Nakama timer has finished", timerId: timer.id, createdAt: timer.finishedAt });
-  return { version: 1, items: items.slice(-100) };
+  return { version: 1, items: items.slice(-100).map((item) => ({ ...item, deliveryDeviceId: originId(principal) })) };
 }

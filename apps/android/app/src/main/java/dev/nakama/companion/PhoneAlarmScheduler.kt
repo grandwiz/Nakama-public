@@ -33,7 +33,7 @@ object PhoneAlarmScheduler {
     fun sync(context: Context, deviceId: String, routines: List<JSONObject>): List<JSONObject> {
         val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val old = JSONObject(preferences.getString("routines", "{}").orEmpty())
-        val selected = routines.filter { it.optString("kind") == "alarm" && it.optString("targetDeviceId") == deviceId }
+        val selected = routines.filter { it.optString("kind") == "alarm" && deviceId in DeviceDelivery.alarmTargets(it) }
         val ids = selected.map { it.optString("id") }.toSet()
         old.keys().asSequence().filter { it !in ids }.forEach { context.getSystemService(AlarmManager::class.java).cancel(pending(context, it)); context.getSystemService(NotificationManager::class.java).cancel(it, 92) }
         val saved = JSONObject()
@@ -62,7 +62,7 @@ object PhoneAlarmScheduler {
         val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (PairingVault(context).load()?.deviceId != preferences.getString("deviceId", "")) { clear(context); return }
         val routine = JSONObject(preferences.getString("routines", "{}").orEmpty()).optJSONObject(id) ?: return
-        if (!routine.optBoolean("enabled")) return
+        if (!routine.optBoolean("enabled") || preferences.getString("deviceId", "") !in DeviceDelivery.alarmTargets(routine)) return
         val manager = context.getSystemService(NotificationManager::class.java)
         val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build()
         manager.createNotificationChannel(NotificationChannel("nakama_routine_alarms", "Nakama routine alarms", NotificationManager.IMPORTANCE_HIGH).apply { setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), attributes) })
@@ -78,7 +78,7 @@ object PhoneAlarmScheduler {
         val identity = PairingVault(context).load() ?: return
         if (identity.deviceId != preferences.getString("deviceId", "")) { clear(context); return }
         val routines = JSONObject(preferences.getString("routines", "{}").orEmpty())
-        routines.keys().forEach { id -> runCatching { schedule(context, routines.getJSONObject(id)) } }
+        routines.keys().forEach { id -> val routine = routines.getJSONObject(id); if (routine.optBoolean("enabled") && identity.deviceId in DeviceDelivery.alarmTargets(routine)) runCatching { schedule(context, routine) } }
     }
 }
 

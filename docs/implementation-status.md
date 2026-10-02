@@ -15,6 +15,10 @@
 
 See [Monitoring](monitoring.md), [Dynamic upgrade](dynamic-upgrade.md) and the [implementation plan](monitoring-upgrades-plan.md). These changes complete relevant foundations; universal browser/app autonomy and every older acceptance gap are not claimed complete.
 
+## Device routing
+
+Replies and ordinary request alerts are scoped to the requesting device. Android actions and timers default to their source; deterministic explicit named targets can route apps/timers remotely. Alarm routines select one or several Android devices with independent schedule receipts. The Chrome extension covers ordinary tabs in one explicit two-hour session, including new and navigated tabs. See [setup and limits](device-routing.md). Nearby microphones can still independently submit separate wake requests; room-wide arbitration is not implemented.
+
 ## The current experience
 
 The general [autonomous task engine](autonomous-tasks.md) adds saved manager decisions, questions/answers, action receipts, separate verification, interruption/resume and exact-approved project-check coordination. Windows/Android have a task panel. Its adapters support public research, already-approved local previews, requested Gmail/Calendar reads and selected-project text. A fresh read or successful command is not proof of an arbitrary completed objective; current outcomes remain reviewable. Universal Windows control and authenticated online form automation remain unfinished.

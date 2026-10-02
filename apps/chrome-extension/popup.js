@@ -1,14 +1,21 @@
 const $ = (id) => document.getElementById(id),
   HOST = "http://127.0.0.1:43111";
+let controlGeneration = 0;
 async function refresh() {
   const { pairing, lastStatus } = await chrome.storage.local.get([
     "pairing",
     "lastStatus",
   ]);
+  const { browserSession, browserControlEpoch = "" } = await chrome.storage.session.get(["browserSession", "browserControlEpoch"]);
+  const granted = await chrome.permissions.contains({ origins: ["<all_urls>"] });
+  const active = pairing?.token && granted && browserSession?.pairingToken === pairing.token && browserSession.controlEpoch === browserControlEpoch && browserSession.expiresAt > Date.now();
+  $("session").textContent = active
+    ? `All ordinary tabs enabled until ${new Date(browserSession.expiresAt).toLocaleTimeString()}. New and navigated tabs are included.`
+    : "Browser control is off. Chrome's saved website permission alone does not start a session.";
   $("pair").hidden = !!pairing;
   $("controls").hidden = !pairing;
   $("status").textContent = pairing
-    ? lastStatus || `Connected to ${pairing.hostName}. Allow a tab to begin.`
+    ? lastStatus || `Connected to ${pairing.hostName}. Enable all ordinary tabs to begin.`
     : "Not paired. Open Nakama Control Center on this PC.";
 }
 function button(id, action) {
@@ -56,35 +63,38 @@ button("connect", async () => {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Pairing failed.");
+  await chrome.storage.session.remove(["browserSession", "allowedTabs"]);
   await chrome.storage.local.set({
     pairing: result,
-    lastStatus: "Paired successfully. Choose a tab to allow.",
+    lastStatus: "Paired successfully. Enable all ordinary tabs to begin.",
   });
   $("ticket").value = "";
   await chrome.alarms.create("nakama-poll", { periodInMinutes: 0.5 });
   await refresh();
 });
 button("allow", async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const url = new URL(tab.url);
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.hostname === "127.0.0.1"
-  )
-    throw new Error("Choose a normal website tab.");
-  const granted = await chrome.permissions.request({
-    origins: [url.origin + "/*"],
-  });
-  if (!granted) throw new Error("Website access was not granted.");
-  const { allowedTabs = {} } = await chrome.storage.session.get("allowedTabs");
-  allowedTabs[tab.id] = {
-    origin: url.origin,
-    expiresAt: Date.now() + 2 * 60 * 60 * 1000,
-  };
-  await chrome.storage.session.set({ allowedTabs });
-  await chrome.storage.local.set({
-    lastStatus: `Allowed ${url.hostname} for two hours. Tab ID: ${tab.id}.`,
-  });
+  const generation = ++controlGeneration;
+  // Request directly from this click so Chrome receives a real user gesture.
+  const previous = chrome.storage.session.get("browserControlEpoch");
+  const request = chrome.permissions.request({ origins: ["<all_urls>"] });
+  const { browserControlEpoch = "" } = await previous;
+  const granted = await request;
+  if (!granted) throw new Error("Website access was not granted. Browser control remains off.");
+  const { pairing } = await chrome.storage.local.get("pairing");
+  const latest = await chrome.storage.session.get("browserControlEpoch");
+  if (generation !== controlGeneration || (latest.browserControlEpoch || "") !== browserControlEpoch) return;
+  if (!pairing?.token) throw new Error("Pair this browser first.");
+  const browserSession = { id: crypto.randomUUID(), pairingToken: pairing.token, controlEpoch: browserControlEpoch,
+    expiresAt: Date.now() + 2 * 60 * 60 * 1000 };
+  await chrome.storage.session.remove(["browserSession", "allowedTabs"]);
+  await chrome.storage.session.set({ browserSession });
+  const { pairing: current } = await chrome.storage.local.get("pairing");
+  const state = await chrome.storage.session.get(["browserSession", "browserControlEpoch"]);
+  if (generation !== controlGeneration || current?.token !== pairing.token || (state.browserControlEpoch || "") !== browserControlEpoch) {
+    if (state.browserSession?.id === browserSession.id) await chrome.storage.session.remove("browserSession");
+    return;
+  }
+  await chrome.storage.local.set({ lastStatus: "All ordinary tabs enabled for two hours. Protected and private pages remain excluded." });
   await chrome.runtime.sendMessage({ type: "poll" });
   await refresh();
 });
@@ -93,15 +103,19 @@ button("poll", async () => {
   await refresh();
 });
 button("stop", async () => {
-  await chrome.storage.session.remove("allowedTabs");
+  ++controlGeneration;
+  await chrome.storage.session.set({ browserControlEpoch: crypto.randomUUID() });
+  await chrome.storage.session.remove(["browserSession", "allowedTabs"]);
   await chrome.storage.local.set({
-    lastStatus: "Stopped. No tabs are currently allowed.",
+    lastStatus: "Stopped. No tabs are accessible to Nakama. Chrome remembers its website grant until you remove it in extension settings.",
   });
   await refresh();
 });
 button("disconnect", async () => {
+  ++controlGeneration;
+  await chrome.storage.session.set({ browserControlEpoch: crypto.randomUUID() });
   await chrome.storage.local.remove(["pairing", "receipts"]);
-  await chrome.storage.session.remove("allowedTabs");
+  await chrome.storage.session.remove(["browserSession", "allowedTabs"]);
   await chrome.storage.local.set({
     lastStatus:
       "Disconnected locally. Revoke this browser in Control Center to invalidate its credential.",

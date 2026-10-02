@@ -1,3 +1,5 @@
+import { resolveDeviceTarget, permittedTarget } from "./device-commands.mjs";
+import { originId, forDelivery } from "./device-delivery.mjs";
 import { ApiError, digest, now, text, uid } from "./security.mjs";
 import { assertPersonalAccess } from "./personal-access.mjs";
 
@@ -204,6 +206,13 @@ function details(value = "") {
     throw new ApiError(400, "Details must be text under 3,000 characters.");
   return value.trim();
 }
+export function routineTargets(routine) {
+  return routine.targetDeviceIds || (routine.targetDeviceId ? [routine.targetDeviceId] : [routine.requestedBy || "desktop"]);
+}
+function originAvailable(state, record) {
+  if (!record.requestedBy || record.requestedBy === "desktop") return true;
+  try { permittedTarget(state, record.requestedBy); return true; } catch { return false; }
+}
 export function validateRoutine(body, current, state, principal) {
   exactKeys(body, [
     "title",
@@ -214,6 +223,7 @@ export function validateRoutine(body, current, state, principal) {
     "weekdays",
     "enabled",
     "targetDeviceId",
+    "targetDeviceIds",
     "requestId",
   ]);
   const value = { ...current, ...body };
@@ -251,24 +261,15 @@ export function validateRoutine(body, current, state, principal) {
   value.weekdays = [...value.weekdays].sort();
   if (typeof value.enabled !== "boolean")
     throw new ApiError(400, "Routine enabled must be true or false.");
-  value.targetDeviceId ||= null;
-  if (value.targetDeviceId !== null) {
-    const device = state.devices.find(
-      (item) => item.id === value.targetDeviceId,
-    );
-    if (!device || device.platform !== "android")
-      throw new ApiError(
-        400,
-        "Choose a paired Android device for this routine.",
-      );
-    if (principal.kind === "device" && principal.id !== device.id)
-      throw new ApiError(403, "A phone can target only itself.");
-  }
-  if (value.kind === "alarm" && !value.targetDeviceId)
-    throw new ApiError(
-      400,
-      "Select the Android device that should receive this alarm request.",
-    );
+  if (body.targetDeviceId !== undefined && body.targetDeviceIds !== undefined) throw new ApiError(400, "Choose one target-device field, not both.");
+  let targets = body.targetDeviceIds !== undefined ? body.targetDeviceIds : body.targetDeviceId !== undefined ? (body.targetDeviceId ? [body.targetDeviceId] : [originId(principal)]) :
+    current ? routineTargets(current) : principal.kind === "device" || value.kind === "reminder" ? [originId(principal)] : [];
+  if (Array.isArray(targets) && !targets.length && value.kind === "reminder") targets = [originId(principal)];
+  if (!Array.isArray(targets) || !targets.length || targets.length > 10 || targets.some((id) => typeof id !== "string" || !id) || new Set(targets).size !== targets.length)
+    throw new ApiError(400, "Select one to ten unique devices for this schedule.");
+  targets = targets.map((id) => resolveDeviceTarget(state, principal, { targetDeviceId: id }, { desktop: value.kind !== "alarm", connected: false }).id);
+  value.targetDeviceIds = targets;
+  value.targetDeviceId = targets.length === 1 ? targets[0] : null;
   return value;
 }
 
@@ -289,7 +290,7 @@ export class PersonalBoards {
     );
     if (principal?.kind === "device")
       board.items = board.items.filter(
-        (item) => !item.targetDeviceId || item.targetDeviceId === principal.id,
+        (item) => item.targetDeviceId ? item.targetDeviceId === principal.id : forDelivery(this.host.store.state, item, principal),
       );
     return board;
   }
@@ -297,13 +298,12 @@ export class PersonalBoards {
     const { requestReceipts, ...board } = structuredClone(
       this.host.store.state.routineBoard,
     );
+    board.routines = board.routines.map((routine) => ({ ...routine, targetDeviceIds: routineTargets(routine) }));
     if (principal.kind === "device") {
-      board.routines = board.routines.filter(
-        (item) => !item.targetDeviceId || item.targetDeviceId === principal.id,
-      );
-      board.occurrences = board.occurrences.filter(
-        (item) => !item.targetDeviceId || item.targetDeviceId === principal.id,
-      );
+      board.routines = board.routines.filter((item) => originAvailable(this.host.store.state, item) && (item.targetDeviceIds.includes(principal.id) || item.requestedBy === principal.id))
+        .map((item) => ({ ...item, targetDeviceId: item.targetDeviceIds.includes(principal.id) ? principal.id : null,
+          deviceSchedule: item.deviceSchedules?.[principal.id] || (item.deviceSchedule?.deviceId === principal.id ? item.deviceSchedule : undefined) }));
+      board.occurrences = board.occurrences.filter((item) => (item.targetDeviceId || item.requestedBy || "desktop") === principal.id);
     }
     return board;
   }
@@ -357,32 +357,18 @@ export class PersonalBoards {
         const when = latestDueOccurrence(routine, date);
         if (!when) continue;
         routine.lastScheduledFor = when;
-        const id = `${routine.id}:${when}`,
-          occurrence = {
-            id,
-            routineId: routine.id,
-            title: routine.title,
-            kind: routine.kind,
-            scheduledFor: when,
-            status: "pending",
-            targetDeviceId: routine.targetDeviceId,
-            createdAt: date.toISOString(),
-          };
-        if (state.routineBoard.occurrences.some((item) => item.id === id))
-          continue;
-        state.routineBoard.occurrences.push(occurrence);
-        state.taskBoard.items.push({
-          id: `routine:${id}`,
-          sourceId: id,
-          sourceKind: "routine",
-          title: routine.title,
-          details: `${routine.kind === "alarm" ? "Alarm request" : "Reminder"} due ${when}. This host receipt does not confirm an Android alarm sounded.`,
-          targetDeviceId: routine.targetDeviceId,
-          requestedBy: routine.requestedBy,
-          completed: false,
-          createdAt: date.toISOString(),
-          updatedAt: date.toISOString(),
-        });
+        if (!originAvailable(state, routine)) continue;
+        for (const targetDeviceId of routineTargets(routine)) {
+          if (targetDeviceId !== "desktop") { try { permittedTarget(state, targetDeviceId); } catch { continue; } }
+          const id = `${routine.id}:${when}:${targetDeviceId}`;
+          if (state.routineBoard.occurrences.some((item) => item.id === id)) continue;
+          const occurrence = { id, routineId: routine.id, title: routine.title, kind: routine.kind,
+            scheduledFor: when, status: "pending", targetDeviceId, requestedBy: routine.requestedBy, createdAt: date.toISOString() };
+          state.routineBoard.occurrences.push(occurrence);
+          state.taskBoard.items.push({ id: `routine:${id}`, sourceId: id, sourceKind: "routine", title: routine.title,
+            details: `${routine.kind === "alarm" ? "Alarm request" : "Reminder"} due ${when}. This host receipt does not confirm an Android alarm sounded.`,
+            targetDeviceId, requestedBy: routine.requestedBy, completed: false, createdAt: date.toISOString(), updatedAt: date.toISOString() });
+        }
       }
       state.routineBoard.occurrences =
         state.routineBoard.occurrences.slice(-200);
@@ -536,8 +522,7 @@ export class PersonalBoards {
         if (!current) throw new ApiError(404, "Routine not found.");
         if (
           principal.kind === "device" &&
-          current.targetDeviceId &&
-          current.targetDeviceId !== principal.id
+          current.requestedBy !== principal.id
         )
           throw new ApiError(
             403,
@@ -558,6 +543,7 @@ export class PersonalBoards {
             "weekdays",
             "enabled",
             "targetDeviceId",
+            "targetDeviceIds",
           ].some(
             (key) => JSON.stringify(next[key]) !== JSON.stringify(current[key]),
           );
@@ -570,6 +556,7 @@ export class PersonalBoards {
           current.scheduleUpdatedAt = current.updatedAt;
           delete current.lastScheduledFor;
           delete current.deviceSchedule;
+          delete current.deviceSchedules;
         }
         return structuredClone(current);
       });
@@ -596,7 +583,7 @@ export class PersonalBoards {
           (item) => item.id === deviceStatus[1],
         );
         if (!current) throw new ApiError(404, "Routine not found.");
-        if (current.targetDeviceId !== principal.id)
+        if (!routineTargets(current).includes(principal.id) || !originAvailable(state, current))
           throw new ApiError(
             403,
             "Only the target phone can report its alarm scheduling.",
@@ -606,14 +593,17 @@ export class PersonalBoards {
             409,
             "This scheduling receipt is for an older routine. Sync the current schedule.",
           );
-        current.deviceSchedule = {
+        const receipt = {
           deviceId: principal.id,
           status: body.status,
           detail,
           reportedAt: this.clock().toISOString(),
           expectedUpdatedAt: body.expectedUpdatedAt,
         };
-        return structuredClone(current.deviceSchedule);
+        current.deviceSchedules ||= {};
+        current.deviceSchedules[principal.id] = receipt;
+        if (routineTargets(current).length === 1) current.deviceSchedule = receipt;
+        return structuredClone(receipt);
       });
     }
     const ack = route.match(/^\/api\/routines\/occurrences\/([^/]+)\/ack$/);

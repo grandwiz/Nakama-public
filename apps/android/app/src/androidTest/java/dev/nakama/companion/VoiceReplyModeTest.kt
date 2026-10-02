@@ -48,7 +48,7 @@ class VoiceReplyModeTest {
             (field("voice").get(activity) as VoiceController).close()
             val services = FakeVoiceServices(); field("voice").set(activity, VoiceController(services, MemoryVoicePreferences(), {}, {}))
             val identity = HostIdentity("https://fixture.invalid", "a".repeat(64), "synthetic", "phone", "Fixture")
-            val snapshot = JSONObject("""{"devices":[{"id":"phone","permissions":{"googleAccess":true,"projectAccess":true}}],"messages":[{"id":"typed","role":"assistant","taskId":"typed-task","content":"TYPED MUST STAY SILENT"},{"id":"voice","role":"assistant","taskId":"voice-task","content":"Your spoken answer"},{"id":"stale","role":"assistant","taskId":"old-task","content":"STALE MUST STAY SILENT"}]}""")
+            val snapshot = JSONObject("""{"devices":[{"id":"phone","permissions":{"googleAccess":true,"projectAccess":true}}],"messages":[{"id":"typed","role":"assistant","deliveryDeviceId":"phone","taskId":"typed-task","content":"TYPED MUST STAY SILENT"},{"id":"voice","role":"assistant","deliveryDeviceId":"phone","taskId":"voice-task","content":"Your spoken answer"},{"id":"stale","role":"assistant","deliveryDeviceId":"phone","taskId":"old-task","content":"STALE MUST STAY SILENT"}]}""")
             call(activity, "setIdentity", identity); call(activity, "setStateIdentity", identity); call(activity, "setState", snapshot); call(activity, "setConnection", "Connected to Fixture")
             val session = field("replySession").getLong(activity)
             @Suppress("UNCHECKED_CAST") val tasks = field("pendingSpeechTasks").get(activity) as MutableMap<String, Long>

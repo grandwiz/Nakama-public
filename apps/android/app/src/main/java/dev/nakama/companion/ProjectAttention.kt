@@ -10,16 +10,17 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.security.MessageDigest
 
-data class AttentionNotice(val id: String, val kind: String, val projectId: String = "", val workflowId: String = "", val questionId: String = "", val browserSessionId: String = "", val intakeId: String = "", val connectionRequestId: String = "", val deliveryId: String = "", val autonomousRunId: String = "", val monitorId: String = "", val selfMaintenanceId: String = "")
+data class AttentionNotice(val id: String, val kind: String, val projectId: String = "", val workflowId: String = "", val questionId: String = "", val browserSessionId: String = "", val intakeId: String = "", val connectionRequestId: String = "", val deliveryId: String = "", val autonomousRunId: String = "", val monitorId: String = "", val selfMaintenanceId: String = "", val deliveryDeviceId: String = "")
 object AttentionPolicy {
     fun key(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
     fun scope(identity: HostIdentity) = key(identity.url + "|" + identity.fingerprint + "|" + identity.deviceId)
     fun unread(notices: List<AttentionNotice>, seen: Set<String>) = notices.filter { it.kind in setOf("question", "login", "approval", "monitor", "upgrade") && it.id.length in 1..300 && key(it.id) !in seen }.distinctBy { it.id }.take(10)
     fun persisted(old: Set<String>, added: List<String>): Set<String> = (old.toList() + added.map(::key)).distinct().takeLast(500).toSet()
     fun supportsVoiceAnswer(notice: AttentionNotice) = notice.kind == "question" && notice.autonomousRunId.isBlank() && notice.monitorId.isBlank() && notice.selfMaintenanceId.isBlank()
+    fun forDevice(json: JSONObject?, deviceId: String) = notices(json).filter { DeviceDelivery.addressedTo(it.deliveryDeviceId, deviceId) }
     fun notices(json: JSONObject?): List<AttentionNotice> = if (json?.optInt("version") != 1) emptyList() else json.objects("items").mapNotNull {
         if (it.optString("kind") !in setOf("question", "login", "approval", "monitor", "upgrade") || it.optString("id").length !in 1..300) null
-        else AttentionNotice(it.optString("id"), it.optString("kind"), it.optString("projectId"), it.optString("workflowId"), it.optString("questionId"), it.optString("browserSessionId"), it.optString("intakeId"), it.optString("connectionRequestId"), it.optString("deliveryId"), it.optString("autonomousRunId"), it.optString("monitorId"), it.optString("selfMaintenanceId"))
+        else AttentionNotice(it.optString("id"), it.optString("kind"), it.optString("projectId"), it.optString("workflowId"), it.optString("questionId"), it.optString("browserSessionId"), it.optString("intakeId"), it.optString("connectionRequestId"), it.optString("deliveryId"), it.optString("autonomousRunId"), it.optString("monitorId"), it.optString("selfMaintenanceId"), it.optString("deliveryDeviceId"))
     }
 }
 
@@ -40,7 +41,7 @@ object ProjectAttention {
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Nakama questions and monitoring attention", NotificationManager.IMPORTANCE_DEFAULT))
         if (manager.getNotificationChannel(CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) return
         val scope = AttentionPolicy.scope(identity); val prefix = "$TAG$scope:"
-        val notices = AttentionPolicy.notices(attention); val current = notices.map { prefix + AttentionPolicy.key(it.id) }.toSet()
+        val notices = AttentionPolicy.forDevice(attention, identity.deviceId); val current = notices.map { prefix + AttentionPolicy.key(it.id) }.toSet()
         manager.activeNotifications.filter { it.tag?.startsWith(TAG) == true && it.tag !in current }.forEach { manager.cancel(it.tag, it.id) }
         val seen = prefs(context).getString("seen:$scope", "").orEmpty().split(',').filter { it.matches(Regex("[a-f0-9]{64}")) }.toSet()
         val delivered = mutableListOf<String>()

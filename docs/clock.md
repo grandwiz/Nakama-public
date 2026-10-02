@@ -25,3 +25,7 @@ Use a clear duration such as “set a timer for 10 minutes”. Ambiguous or unsu
 The Windows and Android lists are separate because each device schedules and delivers its own timer. Android's direct local path uses its own clock, regardless of the paired PC's timezone. Changing the device's date/time is not a timer control; use the timer buttons.
 
 All verification uses disposable state, synthetic provider responses and an emulator. It does not establish audible notification delivery or exact background timing on a physical phone or tablet.
+
+## Choosing the device
+
+An unnamed timer stays on the requesting device. Append an exact paired name, for example “set a 10 minute timer on Kitchen tablet,” to send it there; the queued/result reply stays on the requester while the countdown rings on the destination. An unavailable or ambiguous device is rejected without local fallback. Remote timer dispatch requires the destination to be connected and able to process its action inbox. Repeating alarms use the Routines board and can select several Android destinations, each with its own schedule confirmation. See [device routing](device-routing.md).

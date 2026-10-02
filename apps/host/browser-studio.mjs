@@ -279,6 +279,7 @@ export class BrowserStudio {
             attentionReason: row.attentionReason,
             controller: row.controller,
             sharedDeviceId: row.sharedDeviceId,
+            deliveryDeviceId: row.sharedDeviceId || row.requestedBy?.id || "desktop",
             tainted: row.tainted,
             hasFrame: row.hasFrame && privateVisible,
             activeTabId: row.activeTabId,

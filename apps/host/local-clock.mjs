@@ -78,7 +78,9 @@ export async function localClockReply(host, command, body, principal) {
   }
   if (command.type === "invalid") throw new ApiError(400, "Choose a duration from 1 second to 7 days, for example: set a 10 minute timer called Pasta.");
   if (command.type === "create") {
-    const { timer } = await host.clockTimers.route("POST", "/api/clock/timers", { durationSeconds: command.durationSeconds, title: command.title, ...(body.requestId ? { requestId: body.requestId } : {}) }, principal);
+    const result = await host.clockTimers.route("POST", "/api/clock/timers", { durationSeconds: command.durationSeconds, title: command.title, ...(body.requestId ? { requestId: body.requestId } : {}) }, principal);
+    if (!result.timer) return { reply: result.reply, outcome: { type: "timer_queued", actionId: result.id, targetDeviceId: result.targetDeviceId } };
+    const { timer } = result;
     return { reply: timer.status === "running" ? `Started “${timer.title}” for ${durationLabel(timer.remainingSeconds)} on this PC. Keep Nakama and the PC awake to hear its notification.` : `That timer request was already saved; “${timer.title}” is ${timer.status}.`, outcome: { type: "timer_created", timerId: timer.id } };
   }
   const snapshot = await host.clockTimers.route("GET", "/api/clock", {}, principal);

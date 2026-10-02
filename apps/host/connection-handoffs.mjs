@@ -71,6 +71,7 @@ export class ConnectionHandoffs {
       id: uid(),
       provider: body.provider,
       deviceId: body.deviceId,
+      deliveryDeviceId: body.deviceId,
       accountLabel: text(body.accountLabel, "Account label", 120),
       status: "waiting",
       loginUrl: LOGIN[body.provider],

@@ -14,11 +14,11 @@ Ordinary short conversation uses the separate **Fast Nakama interaction** assign
 
 ## Routines and alarms
 
-Add a name, time, repeat days and time zone on the routines board. Use **Reminder** for a shared reminder or **Alarm** with a specific paired Android device. Pause, edit or remove a routine from either permitted app. The host stores the routine immediately; an alarm also needs the target phone to register its schedule with Android.
+Add a name, time, repeat days and time zone on the routines board. Use **Reminder** for the requesting device by default or **Alarm** with one or more selected Android devices. On the PC, an unassigned reminder stays on this PC; alarms require explicit destinations. Pause, edit or remove a routine from either permitted app. The host stores the routine immediately; an alarm also needs the target phone to register its schedule with Android.
 
 The host checks routines while running and records a due reminder on the task board. It catches up with at most the most recent missed occurrence per routine, rather than creating an entire backlog. Repeat times use the saved IANA time zone, such as `Europe/London`. A nonexistent time during the spring clock change is skipped; the first instance of a repeated autumn time is used once.
 
-Android synchronises routine changes while connected and schedules app-owned alarms. Grant notification and exact-alarm access when asked. The phone reports **scheduled**, **permission required**, **failed** or **cancelled** against the specific routine version. Editing the schedule invalidates the old receipt. A successful registration is evidence of a scheduled alarm, not evidence that it actually sounded. An offline phone cannot receive edits/removals until it reconnects; previously scheduled local alarms may still fire. Check the phone's status after changing an alarm.
+Android synchronises routine changes while connected and schedules app-owned alarms. Grant notification and exact-alarm access when asked. Each selected phone/tablet independently reports **scheduled**, **permission required**, **failed** or **cancelled** against the specific routine version. Editing the schedule invalidates the old receipt. A successful registration is evidence of a scheduled alarm, not evidence that it actually sounded. An offline phone cannot receive edits/removals until it reconnects; previously scheduled local alarms may still fire. Check every selected device's status after changing an alarm. See [device targeting examples](device-routing.md).
 
 Routines currently produce reminders/alarms. They do not schedule automatic purchases, messages, calls, deployments or arbitrary device actions. A routine saved in Core Memory is only a personal note; it does not create an alarm.
 

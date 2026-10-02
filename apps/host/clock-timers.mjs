@@ -39,10 +39,14 @@ export class ClockTimers {
     if (!this.host.store.state.clock.timers.some((timer) => timer.status === "running" && Date.parse(timer.endsAt) <= time)) return;
     await this.host.store.change((state) => { if (!this.closed && !this.host.closing && !this.host.maintenanceLock) settle(state, this.clock()); });
   }
-  async route(method, route, body, principal) {
+  async createForTarget(body, principal) {
+    return this.route("POST", "/api/clock/timers", body, principal, true);
+  }
+  async route(method, route, body, principal, explicitDesktop = false) {
     this.access(principal);
     if (method === "GET" && route === "/api/clock") { await this.tick(); this.access(principal); return this.snapshot(principal); }
     if (method === "POST" && route === "/api/clock/timers") {
+      if (principal.kind === "device" && !explicitDesktop) return this.host.deviceCommands.route({ command: "timer", args: body }, principal);
       if (Object.keys(body).some((key) => !["durationSeconds", "title", "requestId"].includes(key)) || !Number.isSafeInteger(body.durationSeconds) || body.durationSeconds < 1 || body.durationSeconds > MAX_TIMER_SECONDS)
         throw new ApiError(400, "Choose a timer duration between 1 second and 7 days.");
       const title = body.title === undefined ? "Timer" : body.title;
@@ -68,7 +72,7 @@ export class ClockTimers {
         state.clock.requests = state.clock.requests.filter((entry) => time - Date.parse(entry.createdAt) < 30 * 86400000);
         if (requestKey && state.clock.requests.length >= 2000) throw new ApiError(409, "The recent timer request log is full. Try again after older receipts expire.");
         const timer = { id: uid(), title: title.trim(), durationSeconds: body.durationSeconds, remainingMs: body.durationSeconds * 1000,
-          status: "running", endsAt: stamp(time + body.durationSeconds * 1000), createdAt: stamp(time), updatedAt: stamp(time), revision: 1, requestedBy };
+          status: "running", endsAt: stamp(time + body.durationSeconds * 1000), createdAt: stamp(time), updatedAt: stamp(time), revision: 1, requestedBy, targetDeviceId: "desktop" };
         state.clock.timers.push(timer);
         if (requestKey) state.clock.requests.push({ key: requestKey, signature, id: timer.id, createdAt: stamp(time) });
         const old = state.clock.timers.filter((entry) => terminal.has(entry.status)).slice(0, -200);

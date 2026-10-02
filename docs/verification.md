@@ -6,13 +6,13 @@ Nakama is an engineering preview. These results establish the listed local and s
 
 | Check | Recorded result and scope |
 | --- | --- |
-| Host suite | 607 passed, zero failures, one optional Chromium-extension case skipped (608 total). Providers were synthetic; local browser and process fixtures were disposable. |
+| Host suite | 643 passed, zero failures, one optional Chromium-extension case skipped (644 total). Providers were synthetic; local browser and process fixtures were disposable. |
 | Build | Strict TypeScript, Vite and the standalone MCP bundle passed. A bundle-size advisory remains. |
 | Monitoring | Revision, expiry, Stop, restart pause, exact-device sharing and revocation, sensitive or ambiguous outcomes, single cart attempts and private takeover races passed. |
 | Native browser | Isolated Chromium exercised synthetic stock/text/CAPTCHA/queue/cart pages, persistent profile isolation, profile forgetting and existing browser regressions. Release review reproduced service-worker interception; the fix blocks/clears workers and cache during automatic transitions while retaining cookies/localStorage. The native worker regression passed. It did not use a merchant account. |
 | Desktop UI | An isolated native fixture checked drafts, paused monitor creation, selected-phone sharing and held upgrade requests, with no provider calls or remote page loads. |
 | Dynamic upgrade | Fifteen focused tests within the host suite covered source staging, saved preferences, check and independent review evidence, artifact trust, exact approvals, private backup, cancellation and prevention of replay. No production installer was launched. |
-| Android | 77 JVM tests and eight focused Android 16 emulator tests passed. Lint reported zero errors, 34 warnings and two informational hints. See [Android verification](../apps/android/VERIFICATION.md). |
+| Android | 120 JVM tests and 51 focused Android 16 emulator tests passed. Lint reported zero errors, 38 warnings and two informational hints. See [Android verification](../apps/android/VERIFICATION.md). |
 | Release preparation | Eleven release-gate tests passed, including actual-byte/identity binding and synthetic backup restoration into a fresh directory. Four notice tests are included in the host total. The npm runtime inventory covers 156 production placements in 148 notice groups. Neither result certifies signed installation or complete Android binary notices. |
 
 Code review and regression checks covered privacy revocation, stale navigation, one-use cart dispatch, source export and publisher trust. Successful checks are evidence for their tested paths, not a guarantee that every supported workflow or device has been accepted.
@@ -82,3 +82,23 @@ The first host run exposed six fixtures that used a greeting to expect a model w
 The first 41-case Android run passed 39 and exposed two Clock fixture defects: scrolling before Compose/accessibility updated, and using the test-package context to persist state. Corrected frame/scroll synchronization and an isolated target-context preference file passed in the final full rerun. Alarm and audio effects remain synthetic; no physical phone/tablet received instrumentation or installation.
 
 Local time/greeting checks prove there is no PC/model dependency; they do not establish end-to-end physical microphone/TTS latency. Continuous segmentation and any recognizer start sound depend on the installed engine. Real wake detection, background survival, battery use and timer sound remain owner acceptance. The owner installs the APK/Windows preview manually. Packages, runtime profiles and generated reports remain outside Git; this does not clear production binary release gates.
+
+## Device isolation, remote targets and browser sessions (2026-10-02)
+
+Replies, speech and ordinary request notifications now carry the authenticated origin. Explicit app/timer destinations are separately validated; multi-device alarms retain an independent current-version receipt per target. Browser control uses one explicit ordinary-tab session. See [device setup and examples](device-routing.md).
+
+| Check | Actual result |
+| --- | --- |
+| Full host suite | 643 passed, zero failed, one optional Chromium case skipped (644 total). Synthetic providers only. |
+| Chrome extension | All 40 focused checks passed with the disposable Chromium fixture enabled: 32 worker policy cases, seven popup/session-race cases and one real MV3 Chromium flow. New tabs, reloads, cross-origin navigation and bounded screenshots were exercised. The native fixture grants the optional permission in its temporary copy; real installation/prompt acceptance remains manual. |
+| Desktop UI | Seven new alarm-routing checks passed: explicit destinations, two selected targets, independent pending receipts, preserved edits, revoked-target handling, PC-only reminder edits and no provider work. Existing Clock and installed-app fixtures passed six checks each. |
+| Android build/JVM | Final app and instrumentation APK builds passed; all 120 JVM tests passed with no failures/errors. |
+| Android lint | Zero errors, 38 warnings, two informational hints. Remote-timer receipts intentionally inspect synchronous commit success; the style suggestion to discard that result is documented and suppressed. |
+| Android emulator | Final combined run passed all 51 cases, including six device-isolation cases and four Foundations cases. Other cases cover Clock, voice/wake/reply mode, settings, app selection, Mote, monitoring, autonomous tasks and visible control. Crash buffer was empty. |
+| APK identity | dev.nakama.companion, versionName 0.1.0, versionCode 4; verified with the same local debug signing certificate as earlier previews. |
+| Packages | TypeScript/Vite/MCP and unsigned Windows NSIS build passed. Integrity manifest matches the final APK, Windows installer and copied blank public checklist. Packaged source verification passed for 77 files; source/Windows runtime notices passed. |
+| Review | Independent host, Android, extension and desktop reviews checked origin inheritance, explicit-target authority, lost-response retries, stale sessions, permissions, offline schedules and per-target receipts. |
+
+The first Android run passed 50/51: an older Foundations fixture assumed the Routines category remained visible after the Tools row grew. The corrected fixture scrolls the category row and preserves the original assertions; the complete rerun passed. Native desktop fixture adjustments used the explicit routine-type accessibility label and click semantics for a checkbox that removes itself. The host run also corrected old fixtures whose setup assumed shared delivery, without weakening isolation assertions.
+
+No physical phone/tablet was installed or used as a fixture. Recognition, timer/alarm sound, background survival, third-party app behavior and real Chrome permission prompts remain owner acceptance. Two nearby wake listeners can independently accept the same speech; this change does not implement microphone arbitration. No live model, paid generation, account action, purchase, call or deployment was used. Local packages stay out of Git and are engineering previews; production signing, complete Android notices and clean-install/recovery gates remain open.

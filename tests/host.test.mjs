@@ -1096,7 +1096,7 @@ test("disabling Google access hides all privileged history and blocks CLI worker
     deviceId: phone.deviceId,
     type: "contacts_search",
     args: { name: "Fixture" },
-  });
+  }, phone.principal);
   await host.dispatch("GET", "/api/device/actions", {}, phone.principal);
   await host.dispatch(
     "POST",

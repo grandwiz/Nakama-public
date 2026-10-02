@@ -26,6 +26,18 @@ export interface Routine {
   weekdays: number[];
   enabled: boolean;
   targetDeviceId?: string;
+  targetDeviceIds?: string[];
+  requestedBy?: string;
+  deviceSchedules?: Record<
+    string,
+    {
+      deviceId: string;
+      status: string;
+      detail: string;
+      reportedAt: string;
+      expectedUpdatedAt: string;
+    }
+  >;
   createdAt: string;
   updatedAt: string;
   deviceSchedule?: {

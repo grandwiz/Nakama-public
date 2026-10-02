@@ -322,8 +322,8 @@ open class MainActivity : ComponentActivity() {
         val tasks = pendingSpeechTasks.filterValues { it == replySession }.keys.toList()
         val workflows = pendingSpeechWorkflows.filterValues { it == replySession }.keys.toList()
         val receipts = mutableListOf<JSONObject>()
-        if (tasks.isNotEmpty()) receipts += JSONObject().put("taskIds", org.json.JSONArray(tasks))
-        workflows.forEach { receipts += JSONObject().put("workflowId", it).put("spokenMessageIds", org.json.JSONArray(spokenWorkflowMessages.toList())) }
+        if (tasks.isNotEmpty()) receipts += JSONObject().put("deliveryDeviceId", saved.deviceId).put("taskIds", org.json.JSONArray(tasks))
+        workflows.forEach { receipts += JSONObject().put("deliveryDeviceId", saved.deviceId).put("workflowId", it).put("spokenMessageIds", org.json.JSONArray(spokenWorkflowMessages.toList())) }
         if (receipts.isNotEmpty() && WakeWordService.continueReplies?.invoke(saved, receipts) == true) {
             tasks.forEach(pendingSpeechTasks::remove); workflows.forEach(pendingSpeechWorkflows::remove)
             pendingReplies.resolve((tasks + workflows.map { "workflow:$it" }).toSet()); replyWaitStartedAt = pendingReplies.oldestStartedAt
@@ -342,9 +342,10 @@ open class MainActivity : ComponentActivity() {
         } catch (error: Exception) { hostFailure(saved, error) }
     }
     private fun deliverPendingReplies(snapshot: JSONObject, voiceSession: Long) {
-            val replies = snapshot.objects("messages").filter { it.optString("role") == "assistant" }
-            val finished = snapshot.objects("tasks").filter { ReplyPolling.finished(it.optString("status")) }.map { it.optString("id") }
-            val workflows = if (usageAllowed()) snapshot.objects("projectWorkflows") else emptyList()
+            val deviceId = identity?.deviceId ?: return
+            val replies = snapshot.objects("messages").filter { it.optString("role") == "assistant" && DeviceDelivery.addressedTo(it, deviceId) }
+            val finished = snapshot.objects("tasks").filter { DeviceDelivery.addressedTo(it, deviceId) && ReplyPolling.finished(it.optString("status")) }.map { it.optString("id") }
+            val workflows = if (usageAllowed()) snapshot.objects("projectWorkflows").filter { DeviceDelivery.addressedTo(it, deviceId) } else emptyList()
             val settledWorkflows = workflows.filter { it.optString("status") != "running" }.map { "workflow:${it.optString("id")}" }
             pendingReplies.resolve((replies.map { it.optString("taskId") } + finished + settledWorkflows).toSet())
             replyWaitStartedAt = pendingReplies.oldestStartedAt
@@ -380,7 +381,7 @@ open class MainActivity : ComponentActivity() {
                     }
                 }
                 if (reply == null) {
-                    val failed = snapshot.objects("tasks").lastOrNull { pendingSpeechTasks[it.optString("id")] == voiceSession && ReplyPolling.unsuccessful(it.optString("status")) }
+                    val failed = snapshot.objects("tasks").lastOrNull { DeviceDelivery.addressedTo(it, deviceId) && pendingSpeechTasks[it.optString("id")] == voiceSession && ReplyPolling.unsuccessful(it.optString("status")) }
                     failed?.let { pendingSpeechTasks.remove(it.optString("id")); localReply(it.optString("error").ifBlank { "That task stopped. Tap Talk when you are ready." }, ReplyMode.VOICE) }
                 }
             }
@@ -467,8 +468,19 @@ open class MainActivity : ComponentActivity() {
         }
     }
     private fun sendChat(mode: ReplyMode = ReplyMode.TEXT) {
-        val message = draft.trim()
+        var message = draft.trim()
         if (message.isBlank()) return
+        DeviceCommandRouting.parse(message)?.let { directed ->
+            if (directed.error.isNotBlank()) { draft = ""; localReply(directed.error, mode); return }
+            if (DeviceCommandRouting.isThisDevice(directed.targetName)) { message = directed.originalCommand; draft = message }
+            else {
+                if (busy) { notice = "Wait for the current request to be accepted before redirecting another command."; return }
+                draft = ""
+                localMessages += JSONObject().put("id", "local-${System.nanoTime()}").put("role", "user").put("content", message).put("createdAt", Instant.now().toString())
+                sendDirectedCommand(directed, mode)
+                return
+            }
+        }
         LocalClockCommands.parse(message)?.let { command ->
             draft = ""
             localMessages += JSONObject().put("id", "local-${System.nanoTime()}").put("role", "user").put("content", message).put("createdAt", Instant.now().toString())
@@ -494,12 +506,12 @@ open class MainActivity : ComponentActivity() {
         val navigationTicket = navigationReceipts.begin()
         launch {
             val body = ChatRequest.body(message, selectedProject, automatic, selectedProvider, selectedModel, effort, chatMode,
-                if (team) state.objects("providers").filter { it.optString("id") in listOf("codex", "claude") }.map { it.getString("id") } else emptyList()).put("timeZone", ZoneId.systemDefault().id).put("requestId", java.util.UUID.randomUUID().toString())
+                if (team) state.objects("providers").filter { it.optString("id") in listOf("codex", "claude") }.map { it.getString("id") } else emptyList()).put("timeZone", ZoneId.systemDefault().id).put("requestId", java.util.UUID.randomUUID().toString()).put("inputMode", if (mode == ReplyMode.VOICE) "voice" else "text")
             try {
                 if (stateIdentity != saved || !connection.startsWith("Connected")) refreshSnapshot(saved)
                 check(identity == saved && chatAllowed()) { "Connect your PC and enable this device's Google and project access before using AI chat. Direct phone tools remain available." }
                 val response = checkRequest(saved, "POST", "/api/chat", body)
-                if (identity != saved || !chatAllowed()) return@launch
+                if (identity != saved || !chatAllowed() || !DeviceDelivery.addressedTo(response, saved.deviceId)) return@launch
                 if (replySession == deliverySession && (foreground || mode == ReplyMode.VOICE)) {
                     val ids = response.optJSONArray("taskIds")
                     val submitted = if (ids != null) (0 until ids.length()).map { ids.optString(it) }.filter { it.isNotBlank() } else emptyList()
@@ -527,6 +539,26 @@ open class MainActivity : ComponentActivity() {
             } catch (error: Exception) {
                 if (foreground && replySession == deliverySession) localReply(error.message ?: "That request could not finish. Check its status before trying again.", mode)
             }
+        }
+    }
+    private fun sendDirectedCommand(command: DirectedDeviceCommand, mode: ReplyMode) {
+        val saved = identity ?: run { localReply("Pair your PC before targeting another device. Nothing was redirected.", mode); return }
+        val session = replySession
+        val voiceSession = voice.session
+        launch {
+            try {
+                if (stateIdentity != saved || !connection.startsWith("Connected")) refreshSnapshot(saved)
+                check(identity == saved && usageAllowed()) { "Reconnect and enable this device's access before redirecting a command." }
+                val directory = checkRequest(saved, "GET", "/api/device-targets", null)
+                val target = DeviceCommandRouting.resolve(command.targetName, DeviceCommandRouting.targets(directory))
+                check(foreground && identity == saved && replySession == session && (mode != ReplyMode.VOICE || voice.session == voiceSession)) { "The requesting session changed. Nothing was redirected." }
+                val result = checkRequest(saved, "POST", "/api/device/commands", DeviceCommandRouting.body(command, target, java.util.UUID.randomUUID().toString()).put("inputMode", if (mode == ReplyMode.VOICE) "voice" else "text"))
+                refreshSnapshot(saved)
+                if (identity == saved && foreground && replySession == session && usageAllowed() && (mode != ReplyMode.VOICE || voice.session == voiceSession) && DeviceDelivery.addressedTo(result, saved.deviceId))
+                    localReply(result.optString("reply").ifBlank { "Request queued for ${target.name}. Completion has not been confirmed." }, mode)
+                stateRefreshWake.trySend(Unit)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { if (identity == saved && foreground && replySession == session && (mode != ReplyMode.VOICE || voice.session == voiceSession)) localReply(error.message ?: "The other-device request failed. Nothing was run on this phone.", mode) }
         }
     }
     private fun cancelQuestionVoice() {
@@ -574,7 +606,7 @@ open class MainActivity : ComponentActivity() {
         val pending = pendingAttention ?: return
         pendingAttention = null
         if (pending.second != AttentionPolicy.scope(saved) || !usageAllowed()) { notice = "This notification belongs to a different pairing or access is no longer available."; return }
-        val item = AttentionPolicy.notices(snapshot.optJSONObject("attention")).firstOrNull { it.id == pending.first }
+        val item = AttentionPolicy.forDevice(snapshot.optJSONObject("attention"), saved.deviceId).firstOrNull { it.id == pending.first }
         if (item == null) { notice = "This request is already resolved or no longer available."; return }
         when {
             item.monitorId.isNotBlank() || item.selfMaintenanceId.isNotBlank() -> {
@@ -1029,7 +1061,7 @@ open class MainActivity : ComponentActivity() {
                 }
             }
             val workflows = (if (usageAllowed()) state.objects("projectWorkflows") else emptyList()).filter { selectedProject.isBlank() || it.optString("projectId") == selectedProject }.let { rows -> focusedWorkflowId?.let { id -> rows.filter { it.optString("id") == id } } ?: rows.takeLast(3) }
-            val messages = ((if (chatAllowed()) state.objects("messages") else emptyList()).filter { it.opt("pipelineIntermediate") != true && (selectedProject.isBlank() || it.optString("projectId") == selectedProject) } + localMessages).sortedBy { it.optString("createdAt") }
+            val messages = ((if (chatAllowed()) state.objects("messages").filter { DeviceDelivery.addressedTo(it, identity?.deviceId.orEmpty()) } else emptyList()).filter { it.opt("pipelineIntermediate") != true && (selectedProject.isBlank() || it.optString("projectId") == selectedProject) } + localMessages).sortedBy { it.optString("createdAt") }
             val chatList = rememberLazyListState()
             var firstScroll by remember { mutableStateOf(true) }
             LaunchedEffect(messages.size, workflows.size, focusedWorkflowId) {

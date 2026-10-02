@@ -28,7 +28,7 @@ internal class WakeConversation(
         snapshot()
         check(current()) { "The wake session ended before submission." }
         val body = JSONObject().put("message", command.take(24_000)).put("routing", "auto")
-            .put("timeZone", ZoneId.systemDefault().id).put("requestId", UUID.randomUUID().toString())
+            .put("inputMode", "voice").put("timeZone", ZoneId.systemDefault().id).put("requestId", UUID.randomUUID().toString())
         // Never retry this POST: a lost response may already have started work on the host.
         val response = request("POST", "/api/chat", body)
         follow(response)
@@ -36,6 +36,7 @@ internal class WakeConversation(
     /** Continue an already accepted foreground request; this path never submits another POST. */
     suspend fun follow(response: JSONObject) {
         var state = snapshot() // Recheck current access before speaking even an immediate receipt.
+        if (!DeviceDelivery.addressedTo(response, deviceId)) return
         val taskIds = response.optJSONArray("taskIds")?.let { values -> (0 until values.length()).map { values.optString(it) }.filter { it.isNotBlank() }.toMutableSet() } ?: mutableSetOf()
         val workflowId = response.optString("workflowId")
         var workflowPending = workflowId.isNotBlank()
@@ -46,8 +47,8 @@ internal class WakeConversation(
             check(current()) { "The wake session ended." }
             val projectAllowed = state.objects("devices").firstOrNull { it.optString("id") == deviceId }?.optJSONObject("permissions")?.opt("projectAccess") != false
             if (workflowPending && !projectAllowed) throw IllegalStateException("Project access changed. Open Nakama to review your permissions.")
-            val messages = state.objects("messages").filter { it.optString("role") == "assistant" }
-            val workflow = state.objects("projectWorkflows").firstOrNull { it.optString("id") == workflowId }
+            val messages = state.objects("messages").filter { it.optString("role") == "assistant" && DeviceDelivery.addressedTo(it, deviceId) }
+            val workflow = state.objects("projectWorkflows").firstOrNull { it.optString("id") == workflowId && DeviceDelivery.addressedTo(it, deviceId) }
             val latestQuestion = messages.lastOrNull { it.optString("workflowId") == workflowId && it.optString("kind") == "project_questions" }
             val replies = messages.filter { message ->
                 message.opt("pipelineIntermediate") != true && message.optString("id") !in spokenMessages &&
@@ -57,13 +58,13 @@ internal class WakeConversation(
             for (reply in replies) {
                 state = snapshot()
                 check(WakeConversationAccess.allowed(state, deviceId)) { "Access changed before reply playback." }
-                val freshReply = state.objects("messages").firstOrNull { it.optString("role") == "assistant" && it.optString("id") == reply.optString("id") }
+                val freshReply = state.objects("messages").firstOrNull { it.optString("role") == "assistant" && DeviceDelivery.addressedTo(it, deviceId) && it.optString("id") == reply.optString("id") }
                 freshReply?.optString("content")?.takeIf { it.isNotBlank() }?.let { speak(it) }
                 spokenMessages += reply.optString("id")
                 taskIds.remove(reply.optString("taskId"))
                 if (reply.optString("kind") == "project_questions") { needsForeground(); workflowPending = false }
             }
-            state.objects("tasks").filter { it.optString("id") in taskIds && ReplyPolling.finished(it.optString("status")) }.forEach { task ->
+            state.objects("tasks").filter { DeviceDelivery.addressedTo(it, deviceId) && it.optString("id") in taskIds && ReplyPolling.finished(it.optString("status")) }.forEach { task ->
                 taskIds.remove(task.optString("id"))
                 if (ReplyPolling.unsuccessful(task.optString("status"))) speak(task.optString("error").ifBlank { "That task stopped. Open Nakama to review its status." })
             }

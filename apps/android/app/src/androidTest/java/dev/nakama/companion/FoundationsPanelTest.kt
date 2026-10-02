@@ -47,12 +47,24 @@ class FoundationsPanelTest {
         fail(message)
     }
     private fun click(text: String) {
+        var attempts = 0
         await("Missing control $text") {
-            var node = nodes().firstOrNull { it.text?.toString() == text }
-            repeat(8) { if (node?.isClickable == true && node?.isEnabled == true) return@await node!!.performAction(AccessibilityNodeInfo.ACTION_CLICK); node = node?.parent }
+            val current = nodes()
+            var node = current.firstOrNull { it.text?.toString() == text && it.isVisibleToUser }
+            repeat(8) {
+                if (node?.isClickable == true && node?.isEnabled == true && node?.isVisibleToUser == true) return@await node!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                node = node?.parent
+            }
+            // Routines follows Clock/Monitoring in the scrollable category row. Reveal an
+            // offscreen category instead of assuming every chip fits in the emulator viewport.
+            if (++attempts % 4 == 0) {
+                current.firstOrNull { item -> item.isScrollable && item.actionList.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id } }
+                    ?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            }
             false
         }
     }
+
     private fun activity(): MainActivity {
         check(Build.HARDWARE == "ranchu" && Build.FINGERPRINT.startsWith("Android/sdk_")) { "Disposable emulator only." }
         return instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
@@ -88,9 +100,33 @@ class FoundationsPanelTest {
             click("Cancel")
             instrumentation.runOnMainSync { allowed.value = false; page.value = "Tasks" }
             await("Shared content remained after privacy removal") { nodes().none { it.text?.toString() == "Synthetic task" } }
-            assertEquals(1, calls.size)
+            assertEquals(1, calls.count { !it.first.startsWith("GET ") }); assertEquals(1, calls.count { it.first == "GET /api/device-targets" })
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }
+    @Test fun multiTargetAlarmEditsPreserveAllSelectedDevices() {
+        val activity = activity()
+        val snapshot = JSONObject("""{"routineBoard":{"routines":[{"id":"fixture-alarm","title":"Synthetic alarm","kind":"alarm","time":"09:00","timeZone":"Europe/London","weekdays":[1,2,3,4,5],"enabled":true,"targetDeviceId":"fixture-phone","targetDeviceIds":["fixture-phone","fixture-tablet"]}],"occurrences":[]}}""")
+        val directory = JSONObject("""{"sourceDeviceId":"fixture-phone","devices":[{"id":"fixture-phone","name":"Fixture Phone","platform":"android","connected":true},{"id":"fixture-tablet","name":"Fixture Tablet","platform":"android","connected":true},{"id":"desktop","name":"Fixture PC","platform":"desktop","connected":true}]}""")
+        val calls = mutableListOf<Pair<String, JSONObject?>>()
+        try {
+            instrumentation.runOnMainSync { activity.setContent { MaterialTheme { Box(Modifier.safeDrawingPadding()) {
+                FoundationsPanel("Routines", {}, snapshot, "fixture-phone", true, { method, path, body ->
+                    calls += "$method $path" to body?.let { JSONObject(it.toString()) }
+                    if (path == "/api/device-targets") directory else JSONObject()
+                }, {}, {}, 0L to "", {})
+            } } } }
+            click("Edit")
+            await("Device directory was not requested") { calls.any { it.first == "GET /api/device-targets" } }
+            click("Save routine")
+            await("Alarm edit was not submitted") { calls.any { it.first == "PATCH /api/routines/fixture-alarm" } }
+            val body = calls.single { it.first == "PATCH /api/routines/fixture-alarm" }.second!!
+            val targets = body.getJSONArray("targetDeviceIds")
+            assertEquals(setOf("fixture-phone", "fixture-tablet"), (0 until targets.length()).map { targets.getString(it) }.toSet())
+            assertFalse(body.has("targetDeviceId"))
+        } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
+
     @Test fun remoteScreenUsesSyntheticFramesAndBoundInputsThenStops() {
         val activity = activity()
         val image = Bitmap.createBitmap(900, 500, Bitmap.Config.ARGB_8888)
