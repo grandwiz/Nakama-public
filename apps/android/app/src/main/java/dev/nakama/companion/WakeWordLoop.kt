@@ -18,7 +18,7 @@ internal class WakeWordLoop(
     private var transientFailures = 0
     private var stalledStarts = 0
     var enabled = false; private set
-    fun start() { stop(); transientFailures = 0; stalledStarts = 0; enabled = true; nextAttempt = now(); onStatus("Starting local microphone - waiting for Android readiness") }
+    fun start() { stop(); transientFailures = 0; stalledStarts = 0; enabled = true; nextAttempt = now(); onStatus("Starting local microphone - preparing bundled speech") }
     private fun release() { generation++; runCatching { recognition?.close() }; recognition = null; readyAt = null; endedAt = null; finishing = false }
     fun stop() { enabled = false; release(); commandUntil = 0; onStatus("Off") }
     fun tick(audioBusy: Boolean) {
@@ -29,14 +29,14 @@ internal class WakeWordLoop(
         }
         if (commandUntil != 0L && now() > commandUntil) commandUntil = 0
         if (recognition != null) {
-            if (readyAt == null && now() - startedAt >= 8_000) {
+            if (readyAt == null && now() - startedAt >= (recognition?.startupTimeoutMillis ?: 8_000L).coerceIn(8_000L, 60_000L)) {
                 release(); stalledStarts++
-                if (stalledStarts >= 3) { enabled = false; commandUntil = 0; onStatus("Paused - Android never reported microphone ready. Check Voice input settings, the offline model and the microphone privacy switch, then restart.") }
+                if (stalledStarts >= 3) { enabled = false; commandUntil = 0; onStatus("Paused - the recognizer never reported microphone ready. Check free storage and the microphone privacy switch, then restart Nakama.") }
                 else { nextAttempt = now() + 300; onStatus("Restarting a stalled local microphone - attempt ${stalledStarts + 1} of 3") }
             } else if (endedAt != null && now() - endedAt!! >= 6_000) {
                 val continuous = recognition?.continuousSession == true
                 release(); commandUntil = 0; nextAttempt = now() + 300
-                if (continuous) { enabled = false; onStatus("Paused - no continuous recognition result arrived. Use Talk or restart after checking your on-device service; no repeated restart sounds will be generated.") }
+                if (continuous) { enabled = false; onStatus("Paused - no continuous recognition result arrived. Use Talk or restart Nakama; no repeated restart sounds will be generated.") }
                 else onStatus("No final recognition result arrived. Listening will restart; repeat your wake request.")
             } else if (recognition?.continuousSession != true && readyAt != null && now() - readyAt!! >= 25_000 && !finishing) {
                 finishing = true; endedAt = now(); runCatching { recognition?.stopListening() }
@@ -70,12 +70,12 @@ internal class WakeWordLoop(
                 }
             })
             recognition?.observe(
-                { if (current()) { readyAt = now(); stalledStarts = 0; onStatus(if (commandUntil > now()) "Microphone ready - say your command" else "Microphone ready - listening for Nakama or Hey Nakama") } },
+                { if (current()) { readyAt = now(); stalledStarts = 0; onStatus(if (commandUntil > now()) "Microphone ready - say your command" else "Microphone ready - say Hey Nakama and your request") } },
                 { if (current()) { endedAt = now(); onStatus("Speech ended - waiting for the local final result") } },
                 { text -> if (current() && FoundationPolicy.wakeCommand(text) != null) onStatus("Wake phrase heard - finish your request") },
             )
-            onStatus("Starting local microphone - waiting for Android readiness")
+            onStatus("Starting local microphone - preparing bundled speech")
             recognition?.start()
-        } catch (_: Exception) { enabled = false; release(); commandUntil = 0; onStatus("Unavailable - the local recognizer could not start. Open Android Voice input settings and install an offline English model.") }
+        } catch (_: Exception) { enabled = false; release(); commandUntil = 0; onStatus("Unavailable - bundled speech could not start. Restart Nakama and check free storage. No automatic service fallback was used.") }
     }
 }

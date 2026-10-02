@@ -5,3 +5,9 @@
 package-lock.json text eol=lf
 docs/third-party-runtime-notices.txt text eol=lf
 docs/third-party-runtime-inventory.json text eol=lf
+
+# Bundled speech configuration and native build provenance use stable text bytes.
+apps/android/app/src/main/speech-config/* text eol=lf
+# Preserve upstream license whitespace as well as exact bytes.
+apps/android/app/src/main/speech-notices/* -whitespace
+scripts/build-bundled-speech-runtime.* text eol=lf

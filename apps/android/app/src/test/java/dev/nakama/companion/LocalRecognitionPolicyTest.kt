@@ -4,16 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalRecognitionPolicyTest {
-    @Test fun onlyAnInstalledOfflineEnglishLanguageMayBeChosen() {
-        assertEquals("en-GB", LocalRecognitionPolicy.installedEnglish(listOf("en-US", "fr-FR", "en_GB")))
-        assertEquals("en-US", LocalRecognitionPolicy.installedEnglish(listOf("en-US", "de-DE")))
-        assertEquals("en-US", LocalRecognitionPolicy.nextEnglishCheck("en-GB"))
-        assertNull(LocalRecognitionPolicy.nextEnglishCheck("en-US"))
-        assertNull(LocalRecognitionPolicy.nextEnglishCheck("fr-FR"))
-        assertNull(LocalRecognitionPolicy.installedEnglish(listOf("fr-FR")))
-        assertNull(LocalRecognitionPolicy.installedEnglish(emptyList()))
-        assertTrue(LocalRecognitionPolicy.error(13).contains("model is missing"))
+    @Test fun failuresDistinguishBundledPreparationFromOptionalAndroidService() {
+        for (code in listOf(-200, -201, -202)) {
+            val detail = LocalRecognitionPolicy.error(code)
+            assertTrue(detail.contains("bundled", true))
+            assertFalse(detail.contains("Download its local model"))
+        }
+        for (code in listOf(1, 2, 10, 12, 13)) assertTrue(LocalRecognitionPolicy.error(code).contains("optional Android recognition service"))
         assertTrue(LocalRecognitionPolicy.error(-100).contains("not restart"))
+        assertFalse(LocalRecognitionPolicy.error(13).contains("Download"))
     }
     @Test fun boundedPipeWritesPreserveOffsetsAndStopPromptlyOnCancellation() {
         var now = 0L; val offsets = mutableListOf<Int>()

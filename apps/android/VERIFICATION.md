@@ -7,18 +7,18 @@ The Android companion is an engineering preview. The following results cover loc
 | Check | Result |
 | --- | --- |
 | Production and instrumentation builds | Passed with SDK 36, JDK 17 and the Gradle wrapper. The recorded run used cached dependencies in offline mode. |
-| JVM tests | 120 passed with no failures or errors. |
-| Lint | Zero errors, 38 warnings and two informational hints. |
-| Focused Android 16 instrumentation | 51 passed, including device isolation, multi-target alarms, clocks, voice, app selection, monitoring and visible control. |
+| JVM tests | 136 passed with no failures or errors. |
+| Lint | Zero errors, 37 warnings and two informational hints. |
+| Focused Android 16 instrumentation | 59 passed, including four real bundled-decoder checks using synthetic PCM, plus device isolation, alarms, clocks, voice, app selection, monitoring and visible control. |
 | Crash buffer | Empty after the focused instrumentation run. |
 
 The monitoring fixtures cover paused creation with an exact rule and cadence, revision-bound resume/pause, failed-save draft retention, rejection of delayed responses after access revocation, private browser navigation and generic attention notices. Upgrade fixtures verify that saving a request leaves it held and does not execute a model or installation. Policy tests cover exact-app exclusions, incomplete or sensitive observations, expiry, pairing/configuration changes and navigation restrictions.
 
-The fixtures used a disposable emulator, synthetic API responses and isolated test state. They made no model or provider calls, visited no shop, submitted no real payment or message and approved no deployment, DNS change or package installation.
+The fixtures used a disposable emulator, synthetic API responses and isolated test state. The bundled-recognition checks ran the local ASR model on synthetic PCM. No assistant/paid provider calls, shops, real payments, messages, deployments or DNS changes were used. Only the disposable emulator received app/test APK installation.
 
 ## Reproduce the build and JVM checks
 
-Install JDK 17 and Android SDK 36. Configure `JAVA_HOME` and `ANDROID_HOME` for your own installation, or use Android Studio's SDK configuration. From `apps/android`:
+Install JDK 17, Android SDK 36, Python 3.11+, NDK 28.2.13676358 and SDK CMake 3.22.1 on Windows. Set NAKAMA_PYTHON if python is not the correct executable; see the [native build instructions](../../docs/android-guide.md). Configure `JAVA_HOME` and `ANDROID_HOME` for your own installation, or use Android Studio's SDK configuration. From `apps/android`:
 
 ```powershell
 .\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
@@ -65,3 +65,15 @@ Actual phone/tablet audio, recognizer continuous-session support, listening chim
 Build 4 preserves dev.nakama.companion and the existing local debug signing identity. Full JVM tests: 120 passed. Final lint: zero errors, 38 warnings, two hints. The final disposable Android 16 emulator run passed all 51 cases, including six device-isolation tests and four Foundations tests. The initial run passed 50/51; the older Foundations fixture needed to scroll the expanded category row before selecting Routines. After correcting only that test interaction, the full rerun passed and the crash buffer was empty.
 
 Checks cover foreign/unstamped voice and attention suppression, execution target distinct from reply recipient, exact alarm membership, version-bound independent scheduling receipts, multi-target edits, remote timer redelivery and conflicting request IDs. Tests use fake responses and timer adapters; they do not prove audible hardware delivery or actual Netflix launch. See the [complete current verification](../../docs/verification.md#device-isolation-remote-targets-and-browser-sessions-2026-10-02) and [installation/targeting guide](../../docs/device-routing.md). The owner installs the APK manually; no personal phone/tablet was a fixture.
+
+## Bundled English recognition preview (2026-10-02)
+
+Build 5 packages Sherpa-ONNX 1.13.8, ONNX Runtime 1.28.2 and the pinned English streaming Zipformer 2023-06-26 model. It supports arm64-v8a and x86_64 on Android 15+. Talk and wake load verified APK assets rather than an Android recognition-service language download. The native runtime is built with TTS disabled; spoken replies still use Android's separately installed offline voice.
+
+The final offline build passed 136 JVM tests, lint (zero errors, 37 warnings, two hints), app and instrumentation packaging. All 59 focused emulator cases passed and the crash buffer was empty. Six Python runtime-packaging checks also passed. APK checks verified all six model/config files, all 21 notice-source hashes, four speech native libraries, 16 KB native/load and ZIP alignment, versionCode 5, and the unchanged application ID/debug certificate. This is an engineering preview, not a production signing or hardware acceptance claim.
+
+The four native cases load the actual packaged model without opening a microphone. They cover silence, DC/quiet noise/hiss/tone false wakes, 18 generated British/US recordings, and identical meaning for a time request delivered in 100 ms, 400 ms and whole-buffer chunks. The measured corpus result was 7/8 wake positives, 10/10 non-wake recordings rejected, and 4/4 time requests recognized. One British bare-name recording was missed; use **Hey Nakama**. All four timer recordings had wording errors and produced no deterministic timer action. These are explicit ASR quality limits, not timer success claims or reasons to loosen the command parser. Typed Clock commands and the earlier timer policy/UI checks remain separate evidence.
+
+Initial native tests exposed text from digital silence and a lost word sequence with four decoding paths. Acoustic evidence now blocks silence/DC/click transcripts; eight decoding paths retain the complete request on Android. A controlled comparison isolated beam pruning from endpoint handling. Temporary endpoint delays and diagnostic variants were removed; the final native tests passed with default endpoint timing. Recognition accuracy, real microphone/TTS latency, background survival, battery use and physical timer sound still require owner acceptance.
+
+To reproduce the speech corpus on Windows, run `powershell -File scripts/generate-bundled-speech-fixtures.ps1` from the repository root with the installed Microsoft Hazel Desktop and Zira Desktop voices. This renders files without recording or playing audio. The Android test build stages only its WAVs/manifest from the ignored cache; they are never in the app APK. Build again, install both APKs only on a disposable emulator, and run `dev.nakama.companion.BundledSpeechNativeTest` with the instrumentation command above. Missing fixtures fail that explicit corpus test rather than silently skipping it. No personal phone/tablet was installed or used for testing.

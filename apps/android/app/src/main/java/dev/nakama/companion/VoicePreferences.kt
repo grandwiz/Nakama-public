@@ -48,10 +48,10 @@ object VoicePolicy {
 }
 
 enum class RecognitionMode(val explanation: String) {
-    ON_DEVICE("On-device recognition preferred. British English voice data must be installed; availability is checked when you tap Talk."),
+    ON_DEVICE("Bundled offline English recognition. Talk and wake listening use the model included with Nakama; no Android recognition service or model download is needed."),
     SYSTEM("Android recognition service enabled. It may send audio to its provider; the offline preference is not a guarantee."),
-    NEEDS_OPT_IN("No on-device recognizer found. You can type, install offline recognition in Android settings, or allow the Android recognition service below."),
-    UNAVAILABLE("No recognition service found. You can still type. Enable a speech recognition service in Android settings, then refresh voices."),
+    NEEDS_OPT_IN("The bundled recognizer is unavailable. You can type, install a complete Nakama update, or explicitly allow the optional Android recognition service below."),
+    UNAVAILABLE("The bundled recognizer is unavailable and no optional Android service was found. You can still type. Install a complete Nakama update to restore offline recognition."),
 }
 
 interface VoicePreferenceStore {

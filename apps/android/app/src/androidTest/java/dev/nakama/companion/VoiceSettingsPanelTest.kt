@@ -86,4 +86,19 @@ class VoiceSettingsPanelTest {
             assertEquals(RecognitionMode.NEEDS_OPT_IN, controller.recognitionMode)
         } finally { instrumentation.runOnMainSync { controller.close(); activity.finish() } }
     }
+    @Test fun bundledRecognitionUiStaysAvailableWithoutAnAndroidRecognizer() {
+        val services = FakeVoiceServices().apply { onDevice = true; system = false }
+        val (activity, controller) = show(services, MemoryVoicePreferences())
+        try {
+            await("Bundled recognition details did not appear") {
+                if (visible("Bundled offline English recognition")) true
+                else { nodes().firstOrNull { it.isScrollable }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD); false }
+            }
+            assertEquals(RecognitionMode.ON_DEVICE, controller.recognitionMode)
+            assertTrue(visible("no Android recognition service or model download is needed"))
+            assertFalse(nodes().any { it.text?.toString() == "Download local English model" })
+            assertTrue(services.requests.isEmpty()); assertTrue(services.output.spoken.isEmpty())
+        } finally { instrumentation.runOnMainSync { controller.close(); activity.finish() } }
+    }
+
 }

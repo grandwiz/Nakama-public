@@ -41,6 +41,14 @@ This compares those files with their current local sources. It does not inspect 
 
 ## Android remains incomplete
 
+### Bundled offline speech component notices
+
+The bundled recognizer has a separate checked-in [notice set](../apps/android/app/src/main/speech-notices/NOTICE.txt) and [exact source/hash inventory](../apps/android/app/src/main/speech-notices/SOURCES.json). It covers the ASR-only Sherpa-ONNX 1.13.8 JNI build, ONNX Runtime 1.28.2, its linked native dependencies and the pinned English Zipformer model. Full upstream ONNX Runtime and Android NDK umbrella notices are retained; their inclusion does not mean every upstream backend or toolchain program ships in Nakama.
+
+The native runtime is built with TTS disabled. The APK uses Android's separately installed text-to-speech engine for replies; the bundled speech runtime does not contain Vosk, JNA or the standard Sherpa AAR's native TTS components. Eigen's fetched version is 5.0.1; its MPL-2.0 notice and corresponding source URL/hash are included alongside the other native license texts. [Build instructions](android-guide.md#build-android-with-bundled-speech) describe the pinned Windows toolchain and ignored local caches.
+
+Gradle copies this notice set into `speech-model/notices` in the generated APK assets. This closes the new speech component's notice inventory only; the broader Android dependency graph and public signed-distribution gate described below remain separate work.
+
 The Android dependency audit identified these merged license entries in an engineering-preview APK:
 
 - `META-INF/androidx/annotation/annotation/LICENSE.txt`

@@ -122,7 +122,7 @@ class VoiceController internal constructor(
         val generation = ++recognitionGeneration
         handsFree = continuous
         val onDevice = recognitionMode == RecognitionMode.ON_DEVICE
-        val route = if (onDevice) "on device" else "Android service; may use internet"
+        val route = if (onDevice) "bundled offline English" else "Android service; may use internet"
         fun current() = !closed && generation == recognitionGeneration
         try {
             recognizer = services.recognition(onDevice,
@@ -141,7 +141,8 @@ class VoiceController internal constructor(
                     state(when (error) {
                         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is needed. You can still type."
                         SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't catch that. Tap Talk to try again."
-                        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "British English recognition is unavailable. Install its offline language data in Android settings. No automatic service fallback was used."
+                        -200, -201, -202 -> "${LocalRecognitionPolicy.error(error)} No automatic service fallback was used."
+                        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> if (onDevice) "Bundled English recognition is unavailable. Install a complete Nakama update. No automatic service fallback was used." else "English recognition is unavailable in the selected Android service. Check Android voice input settings. No automatic service fallback was used."
                         SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "The Android recognition service could not connect. You can still type."
                         else -> "Voice paused (Android code $error). Tap Talk to retry."
                     })
@@ -150,7 +151,7 @@ class VoiceController internal constructor(
             state("Starting microphone · $route")
             recognizer?.start()
         } catch (_: Exception) {
-            stop(); state("Could not start speech recognition. Check Android speech settings. No automatic service fallback was used.")
+            stop(); state("Could not start speech recognition. Restart Nakama and check microphone permission and free storage. No automatic service fallback was used.")
         }
     }
 

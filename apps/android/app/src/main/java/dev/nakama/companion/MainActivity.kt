@@ -749,12 +749,6 @@ open class MainActivity : ComponentActivity() {
                 preference("wakeEnabled", true)
                 voice.stop(); runCatching { ContextCompat.startForegroundService(this, Intent(this, WakeWordService::class.java).setAction(if (action == "restart_wake") "RESTART" else "START")) }.onSuccess { localReply("Wake listening requested. The listening notification confirms when it is active.", mode) }.onFailure { localReply("Android could not start wake listening: ${it.message}", mode) }
             }
-            "download_wake_model" -> { voice.stop(); stopService(Intent(this, WakeWordService::class.java)); LocalSpeechSetup.downloadEnglish(this) }
-            "wake_input_settings" -> {
-                voice.stop()
-                runCatching { startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }
-                    .onFailure { notice = "Open Android Settings and search for Voice input or On-device recognition. Install offline English, then restart wake listening." }
-            }
             "stop_wake" -> { preference("wakeEnabled", false); stopService(Intent(this, WakeWordService::class.java)); localReply("Wake listening stopped.", mode) }
             "location_permissions" -> { foundationPermissionAction = null; foundationPermissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)) }
             "background_location" -> { notice = "In Android permissions, choose Location. 'Allow all the time' is optional and must be granted there after foreground location access."; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
@@ -1151,7 +1145,7 @@ open class MainActivity : ComponentActivity() {
             }, openInputSettings = {
                 voice.stop()
                 runCatching { startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }
-                    .onFailure { notice = "Open Android Settings and search for Voice input or Offline speech recognition, then return and refresh voices." }
+                    .onFailure { notice = "Open Android Settings and search for Voice input to configure the optional Android recognition service. Bundled offline recognition does not need this setting." }
             }) }
             item { ToggleRow("Confirm ordinary phone actions", "Adds a preview for queued calls and app actions. Deployments and project deletion always need desktop approval.", confirmActions) { confirmActions = it; preference("confirmActions", it) } }
             item { OutlinedButton(onClick = { permissions.launch(arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS)) }, modifier = Modifier.fillMaxWidth()) { Text("Manage phone permissions") } }

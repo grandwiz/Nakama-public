@@ -49,7 +49,7 @@ Nakama can use **your existing eligible subscriptions** without automatic paid A
 
 ## 3. Pair Android
 
-1. Build and install your own locally signed APK on your phone. See [Android instructions](android-guide.md).
+1. Build and install your own locally signed APK on a 64-bit arm64-v8a or x86_64 phone/tablet running Android 15 or later. Windows Android builds need JDK 17, SDK 36, Python 3.11+, NDK 28.2.13676358 and CMake 3.22.1. Gradle prepares the bundled speech runtime automatically; see [build and installation instructions](android-guide.md#build-android-with-bundled-speech).
 2. Put the phone and PC on a reachable private network. For mobile data, configure a private network such as Tailscale first.
 3. In desktop Settings, enable **Allow paired devices over a private network**. Fully quit using **Quit Nakama and disconnect devices** in the Windows tray, then reopen Control Center. Closing the window alone can leave the old listener running.
 4. Open **Devices → Pair a device** and choose Android. Select the detected Wi-Fi/Ethernet address for your home network, or enter the PC's private VPN HTTPS address. Use **Check network again** after changing the connection. Do not use a virtual-machine adapter or `localhost`: on the phone, that means the phone itself. The screen blocks ticket creation while the PC is listening locally only or needs a restart.
@@ -92,7 +92,7 @@ Open **Learned skills** on Windows or **Tools → Learned skills** on Android to
 
 In Android **Device → Make it yours**, use **Reduce motion** if you prefer still pages and mascot. Android's animation settings also apply. Check the feel on each physical device; a successful emulator test is not a frame-rate guarantee.
 
-For voice, tap **Talk** first and grant microphone permission. Voice requests are answered aloud; typed requests stay silent. Set up the home-screen widget or **Home → Enable floating mascot** for quick entry. To use “Nakama” or “Hey Nakama”, follow the [Android wake-word setup steps](android-guide.md#optional-local-nakama-wake-word) on each device. Granting permissions alone does not start listening; check the actual status in **Tools → Wake word**.
+For voice, tap **Talk** first and grant microphone permission. The APK includes its offline English recognizer; first use prepares a local copy without an Android model download. Set up an offline British English text-to-speech voice separately for spoken replies. Voice requests are answered aloud; typed requests stay silent. Set up the home-screen widget or **Home → Enable floating mascot** for quick entry. Follow the [Android wake-word setup steps](android-guide.md#optional-local-nakama-wake-word) on each device, wait for **Microphone ready**, then try **“Hey Nakama, what time is it?”**. Granting permissions alone does not start listening. The larger APK includes approximately 74 MB of model files, and first use requires additional private storage.
 
 Open **Clock** on Windows or **Tools → Clock** on Android to create, pause, resume or cancel a countdown. Android timers run on the phone/tablet; Windows timers require the PC host to stay running and awake. Ask “what time is it?” or “set a 10 minute timer” for a local response without an AI call. See [timer permissions and delivery limits](clock.md).
 

@@ -8,9 +8,6 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.RecognitionSupport
-import android.speech.RecognitionSupportCallback
-import android.speech.ModelDownloadListener
 import androidx.compose.runtime.*
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -39,6 +36,7 @@ internal interface VoicePlayback {
 }
 internal interface VoiceRecognition {
     val continuousSession: Boolean get() = false
+    val startupTimeoutMillis: Long get() = 8_000L
     fun start()
     fun close()
     fun stopListening() {}
@@ -68,7 +66,7 @@ internal fun recognitionCallbacks(onReady: () -> Unit, onEnd: () -> Unit, onResu
 
 /** Diagnostic metadata only: no recognised words, microphone audio or pre-wake transcript are retained. */
 internal object LocalSpeechStatus {
-    var detail by mutableStateOf("Offline model not checked yet. Enable wake listening to check this device."); private set
+    var detail by mutableStateOf("English recognition is included with Nakama. First use prepares the bundled model on this device; no download is needed."); private set
     internal fun update(value: String) { detail = value }
 }
 
@@ -85,110 +83,37 @@ internal fun speechIntent(language: String = "en-GB", source: android.os.ParcelF
         putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, arrayListOf("Nakama", "Hey Nakama"))
     } }
 
-internal class AndroidVoiceServices(private val context: Context) : VoiceServices {
-    private var checkedLanguage: String? = null
+internal class AndroidVoiceServices(
+    private val context: Context,
+    private val platformRecognitionAvailable: () -> Boolean = { SpeechRecognizer.isRecognitionAvailable(context) },
+) : VoiceServices {
     override fun playback(): VoicePlayback = AndroidVoicePlayback(context)
-    override fun onDeviceRecognitionAvailable() = SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
-    override fun systemRecognitionAvailable() = SpeechRecognizer.isRecognitionAvailable(context)
-    override fun recognition(onDevice: Boolean, onReady: () -> Unit, onEnd: () -> Unit, onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition = createRecognition(onDevice, onReady, onEnd, onResult, onError, false)
-    fun wakeRecognition(onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition = createRecognition(true, {}, {}, onResult, onError, true)
-    private fun createRecognition(onDevice: Boolean, onReady: () -> Unit, onEnd: () -> Unit, onResult: (String) -> Unit, onError: (Int) -> Unit, continuous: Boolean): VoiceRecognition {
-        val recognizer = if (onDevice) SpeechRecognizer.createOnDeviceSpeechRecognizer(context) else SpeechRecognizer.createSpeechRecognizer(context)
-        val handler = Handler(Looper.getMainLooper())
-        var closed = false; var supportFinished = false
-        val capture = try { if (continuous) LocalPcmSource { if (!closed) onError(SpeechRecognizer.ERROR_AUDIO) } else null }
-            catch (failure: Exception) { recognizer.destroy(); throw failure }
-        fun inputIntent(language: String = "en-GB") = speechIntent(language, capture?.descriptor)
+    override fun onDeviceRecognitionAvailable() = BundledSpeechRecognition.available(context)
+    override fun systemRecognitionAvailable() = platformRecognitionAvailable()
+    override fun recognition(onDevice: Boolean, onReady: () -> Unit, onEnd: () -> Unit, onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition =
+        if (onDevice) BundledSpeechRecognition(context, false, onReady, onEnd, onResult, onError)
+        else systemRecognition(onReady, onEnd, onResult, onError)
+    fun wakeRecognition(onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition =
+        BundledSpeechRecognition(context, true, {}, {}, onResult, onError)
+
+    /** This path is selected only after the user's explicit Android-service opt-in. */
+    private fun systemRecognition(onReady: () -> Unit, onEnd: () -> Unit, onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition {
+        val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+        var closed = false
         var readyObserver: () -> Unit = {}; var endObserver: () -> Unit = {}; var partialObserver: (String) -> Unit = {}
         recognizer.setRecognitionListener(recognitionCallbacks(
             { if (!closed) { onReady(); readyObserver() } },
             { if (!closed) { onEnd(); endObserver() } },
-            { if (!closed) { if (continuous) onError(-100) else onResult(it) } },
-            { if (!closed) { if (onDevice && it !in setOf(6, 7, 8, 10)) { checkedLanguage = null; LocalSpeechStatus.update(LocalRecognitionPolicy.error(it)) }; onError(it) } },
+            { if (!closed) onResult(it) },
+            { if (!closed) onError(it) },
             { if (!closed) partialObserver(it) },
-            { if (!closed && continuous) onResult(it) },
-            { if (!closed && continuous) onError(-100) },
         ))
-        fun begin(language: String) {
-            if (closed || supportFinished) return
-            supportFinished = true; handler.removeCallbacksAndMessages(null)
-            try { recognizer.startListening(inputIntent(language)); capture?.start() }
-            catch (_: Exception) { capture?.close(); if (!closed) onError(SpeechRecognizer.ERROR_AUDIO) }
-        }
         return object : VoiceRecognition {
-            override val continuousSession = continuous
             override fun observe(onReady: () -> Unit, onEnd: () -> Unit, onPartial: (String) -> Unit) { readyObserver = onReady; endObserver = onEnd; partialObserver = onPartial }
-            override fun start() {
-                if (!onDevice) { begin("en-GB"); return }
-                checkedLanguage?.let { begin(it); return }
-                LocalSpeechStatus.update("Checking installed on-device English speech models...")
-                // Some vendor recognizers cannot report support. A bounded local-only attempt still
-                // gets an honest Ready callback or an actionable error; never switch to cloud input.
-                var requestedLanguage = "en-GB"
-                handler.postDelayed({ if (!closed && !supportFinished) { LocalSpeechStatus.update("This recognizer did not report its model list. Trying local $requestedLanguage; wait for Microphone ready."); begin(requestedLanguage) } }, 2_500)
-                fun checkLanguage(requested: String) {
-                    requestedLanguage = requested
-                    recognizer.checkRecognitionSupport(inputIntent(requested), context.mainExecutor, object : RecognitionSupportCallback {
-                        fun tryNext(): Boolean {
-                            val next = LocalRecognitionPolicy.nextEnglishCheck(requested) ?: return false
-                            LocalSpeechStatus.update("Offline $requested is unavailable. Checking installed local $next; no cloud fallback.")
-                            checkLanguage(next); return true
-                        }
-                        override fun onSupportResult(support: RecognitionSupport) {
-                            if (closed || supportFinished) return
-                            val language = LocalRecognitionPolicy.installedEnglish(support.installedOnDeviceLanguages)
-                            if (language != null) {
-                                checkedLanguage = language
-                                LocalSpeechStatus.update("Installed offline recognition: $language. Wake audio stays on this device.")
-                                begin(language)
-                            } else if (!tryNext()) {
-                                supportFinished = true; handler.removeCallbacksAndMessages(null)
-                                val pending = LocalRecognitionPolicy.installedEnglish(support.pendingOnDeviceLanguages)
-                                LocalSpeechStatus.update(if (pending != null) "Offline $pending model download is pending. Finish the download, then restart wake listening." else "No installed offline English speech model was reported. Download local English below or use Android Voice input settings.")
-                                onError(SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE)
-                            }
-                        }
-                        override fun onError(error: Int) {
-                            if (closed || supportFinished) return
-                            if (error in setOf(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE)) {
-                                if (!tryNext()) { supportFinished = true; handler.removeCallbacksAndMessages(null); LocalSpeechStatus.update(LocalRecognitionPolicy.error(error)); onError(error) }
-                            } else {
-                                LocalSpeechStatus.update("This recognizer cannot check model support (code $error). Trying local $requested; wait for Microphone ready.")
-                                begin(requested)
-                            }
-                        }
-                    })
-                }
-                checkLanguage(requestedLanguage)
-            }
-            override fun stopListening() { if (!closed && supportFinished) recognizer.stopListening() }
-            override fun close() { closed = true; handler.removeCallbacksAndMessages(null); capture?.close(); try { recognizer.cancel() } finally { recognizer.destroy() } }
+            override fun start() { if (!closed) recognizer.startListening(speechIntent()) }
+            override fun stopListening() { if (!closed) recognizer.stopListening() }
+            override fun close() { if (closed) return; closed = true; try { recognizer.cancel() } finally { recognizer.destroy() } }
         }
-    }
-}
-
-/** Only called from an explicit setup button; this downloads model data, never uploads microphone audio. */
-internal object LocalSpeechSetup {
-    private var download: SpeechRecognizer? = null
-    fun downloadEnglish(context: Context) {
-        if (download != null) { LocalSpeechStatus.update("A local model download was already requested. Check Android Voice input settings for its progress."); return }
-        if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) { LocalSpeechStatus.update("Android reports no on-device recognition service. Select or install a compatible service in Voice input settings."); return }
-        val recognizer = runCatching { SpeechRecognizer.createOnDeviceSpeechRecognizer(context) }.getOrElse {
-            LocalSpeechStatus.update("Android could not open its on-device service. Check Voice input settings before downloading a model."); return
-        }.also { download = it }
-        recognizer.setRecognitionListener(recognitionCallbacks({}, {}, {}, {}))
-        val handler = Handler(Looper.getMainLooper()); var finished = false
-        fun finish(detail: String) { if (finished) return; finished = true; handler.removeCallbacksAndMessages(null); LocalSpeechStatus.update(detail); recognizer.destroy(); if (download === recognizer) download = null }
-        handler.postDelayed({ finish("Android did not report the model download status. Check offline English in Voice input settings, then restart wake listening.") }, 60_000)
-        try {
-            LocalSpeechStatus.update("Requesting the offline English (United Kingdom) model. The download uses your internet connection.")
-            recognizer.triggerModelDownload(speechIntent(), context.mainExecutor, object : ModelDownloadListener {
-                override fun onProgress(completedPercent: Int) { if (!finished) LocalSpeechStatus.update("Downloading offline English model: ${completedPercent.coerceIn(0, 100)}%") }
-                override fun onSuccess() = finish("Offline English model download completed. Restart wake listening to check it.")
-                override fun onScheduled() = finish("Offline English model download scheduled by Android. Finish it in Voice input settings, then restart wake listening.")
-                override fun onError(error: Int) = finish("Android could not download the local model (code $error). Use Voice input settings to install offline English, then restart wake listening.")
-            })
-        } catch (_: Exception) { finish("This Android recognizer cannot request its model download here. Use Voice input settings to install offline English.") }
     }
 }
 

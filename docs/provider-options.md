@@ -35,7 +35,7 @@ The optional manual **AI team → Claude → Preferred model** selector offers n
 
 ## Voice and private access
 
-Use installed Android recognition and text-to-speech first. Preview an available British female-sounding voice on each device. Offline support depends on the installed engine; system recognition requires deliberate opt-in. No Nakama cloud-voice purchase is needed. [Android speech API](https://developer.android.com/reference/android/speech/SpeechRecognizer).
+Talk and wake input use the English recognizer bundled in Nakama's APK, with no Android recognition-model download. Preview an installed offline British female-sounding text-to-speech voice on each device; playback voices remain separate from recognition. The optional Android-service Talk route requires deliberate opt-in and may use its provider's network. No Nakama cloud-voice purchase is needed. See [Android voice setup](android-guide.md#voice-and-british-female-speech).
 
 Mobile access needs an awake PC reachable through a private LAN/VPN. Check current personal-plan terms before choosing one. Do not expose Nakama's port on a public router. [Tailscale plans](https://tailscale.com/pricing).
 

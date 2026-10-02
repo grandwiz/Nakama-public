@@ -160,4 +160,24 @@ class FoundationsPanelTest {
             await("Frame was not cleared") { nodes().any { it.text?.toString() == "No screen is being received." } }
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }
+    @Test fun wakeSetupUsesBundledModelWithoutDownloadOrAndroidServiceSetup() {
+        val activity = activity(); val actions = mutableListOf<String>()
+        try {
+            instrumentation.runOnMainSync { activity.setContent { MaterialTheme { Box(Modifier.safeDrawingPadding()) {
+                FoundationsPanel("Wake word", {}, JSONObject(), "fixture-phone", false, { _, _, _ -> fail("Wake setup must not contact the host"); JSONObject() }, {}, actions::add, 0L to "", {})
+            } } } }
+            await("Bundled wake model explanation missing") { nodes().any { it.text?.toString()?.contains("No Android speech model download or Google recognition service is required") == true } }
+            assertFalse(nodes().any { it.text?.toString() == "Download local English model" })
+            assertFalse(nodes().any { it.text?.toString() == "Android Voice input settings" })
+            await("Wake enable control missing") {
+                val current = nodes()
+                if (current.any { it.isVisibleToUser && it.text?.toString() == "Enable Nakama wake word" }) true
+                else { current.firstOrNull { it.isScrollable && it.actionList.none { action -> action.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id } }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD); false }
+            }
+            click("Enable Nakama wake word")
+            await("Wake setup did not invoke local start") { actions == listOf("start_wake") }
+            assertFalse(WakeWordService.running)
+        } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
 }

@@ -22,7 +22,7 @@ General computer/browser/app autonomy is the direction. Unrestricted app input, 
 
 ## Build from source
 
-Use Windows 10 or later, Node.js 24 and npm. Android additionally requires JDK 17 and SDK 36. Review dependency and provider terms before use; see [notices](NOTICE.md) and [dependency notices](docs/third-party-notices.md).
+Use Windows 10 or later, Node.js 24 and npm. The Android app requires a 64-bit arm64-v8a or x86_64 device running Android 15 or later. Android builds additionally require JDK 17, SDK 36 and Python 3.11+, with SDK Manager NDK 28.2.13676358 and CMake 3.22.1 for the pinned ASR-only speech runtime. See [Android build setup](docs/android-guide.md#build-android-with-bundled-speech). Review dependency and provider terms before use; see [notices](NOTICE.md) and [dependency notices](docs/third-party-notices.md).
 
 ```powershell
 npm ci
@@ -33,6 +33,8 @@ npm start
 
 `npm run dist:win` creates an **unsigned local development installer**, not a production-signed release. There are no prebuilt downloads in this source release. Configure production signing, dependency notices, identity checks and deliberate installation/recovery acceptance before distributing binaries. [Release process](docs/release-signing.md).
 
+Android Talk and wake recognition include a bundled offline English model in the locally built APK; no Android recognition-model download is required after installation. Model assets are pinned and checksum-verified at build time, with downloaded weights and generated caches excluded from Git. The model makes the APK larger and is extracted into private app storage on first use. Spoken replies still need a separate installed Android text-to-speech voice.
+
 For Android build commands and limitations, read [Android verification](apps/android/VERIFICATION.md) and [Android setup](docs/android-guide.md). The normal debug task uses your own local development key. It will not update an installation signed by another key. Never uninstall an existing app merely to bypass a signature mismatch; preserve its data and signing identity.
 
 ## Set up your own installation
@@ -40,7 +42,7 @@ For Android build commands and limitations, read [Android verification](apps/and
 1. Choose a dedicated workspace in Windows Control Center. Keep the host awake when using it from a phone.
 2. Check saved model roles and connect eligible accounts through the providers' official authentication flows. Subscriptions, hosting, domains and optional services may cost money; there is no automatic paid fallback.
 3. Enable the private-network listener deliberately and pair each trusted phone separately. Android pins the host certificate. Do not expose the host directly to the public internet.
-4. On Android, follow [the wake-word setup steps](docs/android-guide.md#optional-local-nakama-wake-word), including offline recognition, the visible listening status and battery settings. Microphone permission alone does not enable wake listening.
+4. On Android, follow [the wake-word setup steps](docs/android-guide.md#optional-local-nakama-wake-word), including first-use model preparation, the visible **Microphone ready** status and battery settings. Start with “Hey Nakama, what time is it?” Microphone permission alone does not enable wake listening.
 5. Try local commands such as “add task check my Nakama setup”. Then follow the [testing guide](docs/testing-guide.md).
 
 Kling is optional and disabled by default. Every generation requires a separate PC approval and may consume credits. Deployment, DNS, command and source-write authority is scoped; page contents and models cannot grant permissions. Read [permissions and private data](docs/security.md).

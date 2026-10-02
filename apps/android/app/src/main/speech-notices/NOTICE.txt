@@ -1,0 +1,74 @@
+Nakama bundled offline speech recognition
+
+This directory accompanies the ASR-only Android recognition runtime and model.
+The original license and notice texts below are copied without alteration.
+SOURCES.json records their source locations, versions, byte counts and SHA-256.
+Nakama's own source remains under its existing license; the third-party terms
+apply to their respective components.
+
+RUNTIME AND LOCAL MODIFICATIONS
+Sherpa-ONNX 1.13.8, copyright its upstream contributors, Apache-2.0.
+https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.8
+See SHERPA-ONNX-LICENSE.txt.
+Nakama builds the JNI library from pinned upstream source for arm64-v8a and
+x86_64, with TTS, speaker diarization and the C API disabled. The upstream AAR
+provides Kotlin classes/resources; its original native libraries are replaced.
+The packaged native libraries are libsherpa-onnx-jni.so and libonnxruntime.so.
+No native espeak/piper text-to-speech component, Vosk or JNA is included by this
+speech runtime. Spoken replies use a separately installed Android TTS engine.
+The reproducible build recipe is scripts/build-bundled-speech-runtime.py.
+
+ONNX Runtime 1.28.2, copyright Microsoft Corporation, MIT.
+https://github.com/microsoft/onnxruntime/tree/v1.28.2
+See ONNXRUNTIME-LICENSE.txt and ONNXRUNTIME-ThirdPartyNotices.txt.
+The pinned Android binary is published by the Sherpa project contributor at:
+https://github.com/csukuangfj/onnxruntime-libs/releases/tag/v1.28.2
+Its exact archive hash is recorded in the runtime build recipe/provenance.
+The upstream aggregate third-party notice is retained in full; it covers
+upstream build variants and does not assert that every listed backend ships here.
+
+STATIC NATIVE DEPENDENCIES
+The source-built JNI target incorporates these upstream components:
+- kaldi-native-fbank 1.22.3: Apache-2.0; KALDI-NATIVE-FBANK-LICENSE.txt.
+- kaldi-decoder 0.3.0: Apache-2.0; KALDI-DECODER-LICENSE.txt.
+- kaldifst 1.8.0: Apache-2.0; KALDIFST-LICENSE.txt.
+- OpenFST 1.8.5-2026-04-10: Apache-2.0; OPENFST-COPYING.txt and APACHE-2.0.txt.
+- KissFFT commit febd4caeed32e33ad8b2e0bb5ea77542c40f18ec:
+  copyright Mark Borgerding and contributors; BSD-3-Clause;
+  KISSFFT-COPYING.txt and KISSFFT-BSD-3-Clause.txt.
+- Eigen 5.0.1: primarily MPL-2.0, with additional notices described by upstream;
+  EIGEN-LICENSE.txt and the EIGEN-COPYING.*.txt files.
+  Unmodified corresponding source is available at:
+  https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz
+  SHA-256 e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec
+  This is the version selected by Sherpa's top-level FetchContent declaration;
+  kaldi-decoder's nested Eigen 3.4.0 fallback is not the fetched build version.
+- simple-sentencepiece 0.7: Apache-2.0; SIMPLE-SENTENCEPIECE-LICENSE.txt.
+- nlohmann/json 3.12.0: MIT; JSON-LICENSE.MIT.txt.
+
+Component source archive pins are in the verified Sherpa source's cmake files
+and nested dependency cmake files. Their exact upstream license locations are
+listed in SOURCES.json. Upstream per-file copyright notices remain available in
+the corresponding source archives.
+
+ANDROID C++ RUNTIME
+Android NDK 28.2.13676358 (r28c), with ANDROID_STL=c++_static, supplies the
+statically linked libc++/libc++abi runtime and supporting compiler runtime.
+Full exact NDK NOTICE and NOTICE.toolchain files are retained as
+ANDROID-NDK-NOTICE.txt and ANDROID-NDK-NOTICE.toolchain.txt. These include the
+LLVM/Apache exceptions and C++ runtime notices as supplied with that NDK.
+They are aggregate toolchain notices and do not mean the whole NDK is shipped.
+
+ENGLISH SPEECH MODEL
+sherpa-onnx-streaming-zipformer-en-2023-06-26
+Publisher: csukuangfj / the Sherpa-ONNX model project.
+Pinned revision: 672fbf1b30579d6585301139bb363f42a0ad4a24
+https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/tree/672fbf1b30579d6585301139bb363f42a0ad4a24
+The model publisher identifies Apache-2.0 in its exact MODEL-README.md;
+the full license is included as APACHE-2.0.txt. Model weights and tokens are
+packaged from the pinned files without modification. Nakama derives a text BPE
+vocabulary from the publisher's bpe.model and adds a Nakama hotword hint;
+see BPE-VOCABULARY-PROVENANCE.md for the source and output hashes.
+Nakama additionally provides local microphone lifecycle, strict wake routing,
+signal evidence checks and model-integrity verification. Audio is not recorded
+and model preparation uses APK assets without a runtime model download.

@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WakeWordLoopTest {
-    private class Fake(override val continuousSession: Boolean = false) : VoiceRecognition {
+    private class Fake(override val continuousSession: Boolean = false, override val startupTimeoutMillis: Long = 8_000L) : VoiceRecognition {
         lateinit var result: (String) -> Unit
         lateinit var error: (Int) -> Unit
         var started = false; var closed = false
@@ -102,6 +102,31 @@ class WakeWordLoopTest {
         assertFalse(loop.enabled); assertEquals(3, created.size); assertTrue(created.all { it.closed }); assertTrue(status.contains("never reported microphone ready"))
         loop.start(); loop.tick(false); val active = created.last(); active.ready(); active.ended(); now += 6_001; loop.tick(false)
         assertFalse(loop.enabled); assertTrue(active.closed); assertTrue(status.contains("no continuous recognition result"))
+    }
+
+    @Test fun bundledPreparationGetsBoundedTimeWithoutPrematureReadyAndStopInvalidatesIt() {
+        var now = 1L; val created = mutableListOf<Fake>(); var status = ""; val commands = mutableListOf<String>()
+        val loop = WakeWordLoop({ now }, { result, error -> Fake(true, 60_000L).also { it.result = result; it.error = error; created += it } }, { status = it }, commands::add)
+        loop.start(); loop.tick(false)
+        now += 15_000; loop.tick(false)
+        assertEquals(1, created.size); assertFalse(created.single().closed)
+        assertTrue(status.startsWith("Starting")); assertFalse(status.contains("Microphone ready"))
+        val preparing = created.single(); loop.stop(); preparing.ready(); preparing.result("Nakama stale request")
+        assertEquals("Off", status); assertTrue(commands.isEmpty()); assertTrue(preparing.closed)
+        loop.start(); loop.tick(false)
+        now += 59_999; loop.tick(false); assertFalse(created.last().closed)
+        now += 1; loop.tick(false); assertTrue(created.last().closed)
+        assertFalse(status.contains("Microphone ready"))
+    }
+    @Test fun brokenBundledModelPausesWithoutRestartingOrSubmitting() {
+        for (code in listOf(-200, -201, -202)) {
+            var now = 1L; val created = mutableListOf<Fake>(); var status = ""; val commands = mutableListOf<String>()
+            val loop = WakeWordLoop({ now }, { result, error -> Fake(true, 60_000L).also { it.result = result; it.error = error; created += it } }, { status = it }, commands::add)
+            loop.start(); loop.tick(false); created.single().error(code)
+            now += 120_000; loop.tick(false)
+            assertFalse(loop.enabled); assertTrue(created.single().closed); assertEquals(1, created.size)
+            assertTrue(status.startsWith("Paused")); assertFalse(status.contains("Voice input settings")); assertTrue(commands.isEmpty())
+        }
     }
 
 }

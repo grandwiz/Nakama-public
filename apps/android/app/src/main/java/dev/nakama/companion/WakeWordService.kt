@@ -8,7 +8,6 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.SystemClock
 import android.provider.Settings
-import android.speech.SpeechRecognizer
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
@@ -43,13 +42,12 @@ class WakeWordService : Service() {
             return START_NOT_STICKY
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED || !getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { status = "Unavailable · allow microphone and notifications"; stopSelf(); return START_NOT_STICKY }
-        if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) { status = "Unavailable · this device has no on-device recognizer. No cloud fallback."; stopSelf(); return START_NOT_STICKY }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("nakama_wake", "Nakama wake word", NotificationManager.IMPORTANCE_LOW))
         if (manager.getNotificationChannel("nakama_wake").importance == NotificationManager.IMPORTANCE_NONE) { status = "Unavailable · enable wake word notifications"; stopSelf(); return START_NOT_STICKY }
         val stop = PendingIntent.getService(this, 72, Intent(this, WakeWordService::class.java).setAction("STOP"), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 73, Intent(this, FoundationEntryActivity::class.java).putExtra("foundation_page", "Wake word"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        notificationBuilder = Notification.Builder(this, "nakama_wake").setSmallIcon(R.drawable.ic_nakama).setContentTitle("Nakama wake word").setContentText("Starting local microphone - waiting for Android readiness").setContentIntent(open).setVisibility(Notification.VISIBILITY_PRIVATE).addAction(Notification.Action.Builder(null, "Stop listening", stop).build()).setOngoing(true).setOnlyAlertOnce(true)
+        notificationBuilder = Notification.Builder(this, "nakama_wake").setSmallIcon(R.drawable.ic_nakama).setContentTitle("Nakama wake word").setContentText("Preparing bundled speech - waiting for microphone readiness").setContentIntent(open).setVisibility(Notification.VISIBILITY_PRIVATE).addAction(Notification.Action.Builder(null, "Stop listening", stop).build()).setOngoing(true).setOnlyAlertOnce(true)
         try { startForeground(72, notificationBuilder!!.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) }
         catch (_: Exception) { status = "Paused · open Nakama to enable wake listening"; stopSelf(); return START_NOT_STICKY }
         stopped = false; running = true

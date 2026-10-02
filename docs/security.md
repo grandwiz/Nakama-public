@@ -102,7 +102,7 @@ Deployments and project deletion always need explicit approval. Typed service pr
 
 ## Data lifecycle
 
-History and preferences remain local unless relevant context is sent to the selected AI provider for a task. Model-provider processing follows that provider's account and service terms. Do not assume all speech recognition is offline; the Android app must show which available recogniser is used.
+History and preferences remain local unless relevant context is sent to the selected AI provider for a task. Model-provider processing follows that provider's account and service terms. Android uses its bundled offline recognizer by default and identifies the optional Android-service Talk route if explicitly enabled and needed; that optional service may send audio to its provider.
 
 Credentials are encrypted; general local history and project metadata are ordinary files protected by your Windows account's filesystem access, not a separately encrypted database. Disconnecting Google removes local credentials but does not revoke the grant in your Google account; use Google's account security page to revoke that grant as well.
 
@@ -138,7 +138,7 @@ Installed-app lists contain bounded launcher-visible labels and package IDs, sup
 
 Android handles exact local greeting, current-time/date and supported timer requests before the paired-host route. Phone timers use separate app-private storage, revision-bound alarm/dismissal intents and Android's explicit notification/exact-alarm grants. They do not gain remote control or shared-account access. Permission failure is displayed as a paused timer, not a claim that an alarm was scheduled. PC timer records, chat receipts and attention events remain scoped to the owner or originating permitted Android caller.
 
-Wake input requests a continuous segmented on-device recognition session. Live PCM passes through a bounded in-memory OS pipe; no audio file or pre-wake transcript is retained. Only completed recognition results can enter command handling, and Stop, audio takeover or screen lock closes the stream. Unsupported/ended continuous recognition pauses rather than falling back to a noisy repeated-session or network-recognition loop. Model download is a separate explicit setup action. Nakama does not mute system audio to hide an engine's listening sounds. Physical device behavior and recognition-service support remain acceptance work.
+Wake and default Talk input use a bundled native English recognizer. Build-time model assets are pinned and checksum-verified; first use verifies and extracts APK assets into bounded private app storage without a runtime download. Live microphone PCM is decoded in memory; no audio file or pre-wake transcript is retained. Only completed recognition results can enter command handling, and Stop, audio takeover or screen lock closes capture and invalidates queued callbacks. Wake requires an exact leading recognised name; subword hotword hints do not authorise fuzzy aliases. Capture or decoder failure pauses instead of switching to a network recognizer. Android text-to-speech remains separate and uses only the chosen available offline voice. Nakama does not mute system audio. Physical recognition accuracy, battery use and device lifecycle behavior remain acceptance work.
 
 ## Device delivery and explicit remote targets
 

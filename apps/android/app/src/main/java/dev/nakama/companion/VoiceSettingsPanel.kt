@@ -44,15 +44,17 @@ fun VoiceSettingsPanel(voice: VoiceController, openSpeechSettings: () -> Unit, o
             HorizontalDivider()
             Text("Microphone recognition", style = MaterialTheme.typography.titleSmall)
             Text(voice.recognitionMode.explanation, style = MaterialTheme.typography.bodySmall)
+            Text(LocalSpeechStatus.detail, style = MaterialTheme.typography.bodySmall)
+            Text("Recognition and playback are separate: the bundled English model understands your speech; your selected Android offline British English voice speaks replies.", style = MaterialTheme.typography.bodySmall)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("Allow Android recognition service", style = MaterialTheme.typography.bodyMedium)
-                    Text("Used only when on-device recognition is unavailable. Its provider may receive audio and use your data connection. No paid Nakama voice API is configured.", style = MaterialTheme.typography.bodySmall)
+                    Text("Used for Talk only if the bundled recognizer is unavailable and you explicitly allow it. Its provider may receive audio and use your data connection. Wake listening always uses bundled offline recognition. Recognition errors never switch services automatically.", style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = voice.allowSystemRecognition, onCheckedChange = voice::allowServiceRecognition,
                     modifier = Modifier.semantics { contentDescription = "Allow Android recognition service" })
             }
-            TextButton(onClick = openInputSettings) { Text("Android voice input settings") }
+            TextButton(onClick = openInputSettings) { Text("Optional Android voice input settings") }
         }
     }
 }

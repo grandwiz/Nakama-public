@@ -254,4 +254,31 @@ class VoiceControllerTest {
         assertFalse(speechIntent().hasExtra(android.speech.RecognizerIntent.EXTRA_AUDIO_SOURCE))
     }
 
+    @Test fun bundledTalkWorksWithoutSystemRecognitionAndModelFailureNeverUsesService() = main {
+        val services = FakeVoiceServices().apply { onDevice = true; system = false }
+        val received = mutableListOf<String>()
+        val controller = VoiceController(services, MemoryVoicePreferences(VoicePreferences(allowSystemRecognition = true)), received::add, {})
+        assertEquals(RecognitionMode.ON_DEVICE, controller.recognitionMode)
+        controller.listen(); assertTrue(services.requests.single().onDevice)
+        services.requests.single().error(-201)
+        assertTrue(controller.activityStatus.contains("Bundled speech"))
+        assertTrue(controller.activityStatus.contains("No automatic service fallback"))
+        assertEquals(1, services.requests.size); assertTrue(services.requests.single().closed)
+        services.requests.single().result("stale failed model callback"); assertTrue(received.isEmpty())
+        controller.close()
+    }
+    @Test fun productionTalkAndWakeFactoriesUseBundledAdapterWithoutPlatformRecognizer() = main {
+        val context = instrumentation.targetContext
+        val services = AndroidVoiceServices(context, platformRecognitionAvailable = { false })
+        assertFalse(services.systemRecognitionAvailable())
+        assertTrue("The release APK must contain its offline model manifest", services.onDeviceRecognitionAvailable())
+        val talk = services.recognition(true, { fail("No microphone started") }, {}, {}, {})
+        val wake = services.wakeRecognition({}, {})
+        try {
+            assertTrue(talk is BundledSpeechRecognition); assertFalse(talk.continuousSession)
+            assertTrue(wake is BundledSpeechRecognition); assertTrue(wake.continuousSession)
+            assertEquals(60_000L, wake.startupTimeoutMillis)
+        } finally { talk.close(); wake.close() }
+    }
+
 }

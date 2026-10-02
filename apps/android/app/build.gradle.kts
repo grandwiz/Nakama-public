@@ -12,10 +12,13 @@ android {
         applicationId = "dev.nakama.companion"
         minSdk = 35
         targetSdk = 36
-        versionCode = 4
+        ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
+        versionCode = 5
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/bundledSpeechAssets"))
+    sourceSets.getByName("androidTest").assets.srcDir(layout.buildDirectory.dir("generated/speechTestAssets"))
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -27,7 +30,11 @@ android {
     }
 }
 
+apply(from = rootProject.file("bundled-speech.gradle.kts"))
+tasks.named("preBuild").configure { dependsOn("prepareBundledSpeechModel") }
+
 dependencies {
+    implementation(files(layout.buildDirectory.file("bundled-runtime/sherpa-onnx-1.13.8-asr-only.aar")).builtBy("prepareBundledSpeechRuntime"))
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.ui:ui:1.8.2")
