@@ -1,0 +1,120 @@
+.monitoring-page {
+  display: grid;
+  gap: 20px;
+}
+.monitoring-page h2,
+.monitor-heading,
+.monitor-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.monitor-heading {
+  justify-content: space-between;
+}
+.monitor-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+.monitor-fields label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.monitor-fields input,
+.monitor-fields select {
+  width: 100%;
+  min-height: 40px;
+}
+.monitor-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+.monitor-check input {
+  width: auto;
+}
+.monitor-cards {
+  display: grid;
+  gap: 16px;
+}
+.monitor-actions {
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.monitor-card dl {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  font-size: 13px;
+}
+.monitor-card dd {
+  margin: 0;
+}
+.monitor-target {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.monitor-card details {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.monitor-card summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.monitor-recipe {
+  margin-bottom: 8px;
+}
+.monitor-form-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.self-maintenance-panel {
+  display: grid;
+  gap: 20px;
+}
+.self-maintenance-panel > fieldset {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+}
+.self-maintenance-panel .card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 24px;
+}
+.self-maintenance-panel .card h2,
+.self-maintenance-panel .card h3 {
+  margin-bottom: 12px;
+}
+.self-maintenance-panel .card p {
+  margin-bottom: 12px;
+}
+.self-maintenance-panel label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.self-maintenance-panel .row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.self-maintenance-panel code {
+  overflow-wrap: anywhere;
+}
+.self-maintenance-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}

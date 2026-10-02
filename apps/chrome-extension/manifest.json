@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Nakama Browser Companion",
+  "version": "0.1.0",
+  "description": "Privately pair Chrome with Nakama Control Center and allow requested actions in selected tabs.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "tabs", "scripting", "activeTab", "alarms"],
+  "host_permissions": ["http://127.0.0.1:43111/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "action": { "default_title": "Nakama", "default_popup": "popup.html" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

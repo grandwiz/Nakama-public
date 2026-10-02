@@ -1,0 +1,143 @@
+.usage-panel {
+  display: grid;
+  gap: 22px;
+}
+.usage-summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.usage-summary svg {
+  flex-shrink: 0;
+}
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.usage-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.usage-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.usage-card h2 {
+  font-size: 19px;
+  color: var(--title);
+}
+.usage-windows {
+  display: grid;
+  gap: 25px;
+}
+.usage-window-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.usage-remaining {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 13px;
+}
+.usage-remaining strong {
+  font-size: 31px;
+  color: var(--title);
+  letter-spacing: -1px;
+}
+.usage-remaining span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.usage-window progress {
+  display: block;
+  width: 100%;
+  height: 9px;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--border);
+  accent-color: var(--teal);
+}
+.usage-window progress::-webkit-progress-bar {
+  background: var(--border);
+  border-radius: 10px;
+}
+.usage-window progress::-webkit-progress-value {
+  background: var(--teal);
+  border-radius: 10px;
+}
+.usage-window progress.usage-low {
+  accent-color: var(--danger);
+}
+.usage-window progress.usage-low::-webkit-progress-value {
+  background: var(--danger);
+}
+.usage-window-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+.usage-unknown {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.usage-unknown strong {
+  color: var(--muted);
+  font-size: 34px;
+  font-weight: 500;
+}
+.usage-detail {
+  color: var(--muted);
+  line-height: 1.75;
+  font-size: 12px;
+}
+.usage-card-footer {
+  display: grid;
+  gap: 11px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+  color: var(--muted);
+}
+.usage-card-footer small {
+  font-size: 10px;
+}
+.usage-card-footer button {
+  justify-self: start;
+}
+.usage-error {
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.6;
+}
+@media (max-width: 1150px) {
+  .usage-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .usage-grid {
+    grid-template-columns: 1fr;
+  }
+}

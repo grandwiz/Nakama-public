@@ -1,0 +1,132 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    system-ui,
+    Segoe UI,
+    sans-serif;
+  color: #e8eef9;
+  background: #111621;
+}
+body {
+  width: 360px;
+  margin: 0;
+}
+header {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #18273c, #1a2031);
+  border-bottom: 1px solid #283247;
+}
+h1 {
+  font-size: 22px;
+  margin: 0;
+  letter-spacing: -0.7px;
+}
+header p {
+  font-size: 12px;
+  margin: 4px 0 0;
+  color: #a3b3cc;
+}
+.pet {
+  background: #63b9ff;
+  border-radius: 16px 16px 21px 21px;
+  box-shadow: 0 0 25px #3a91ff33;
+  color: #0c2545;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 5px;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-content: center;
+  padding-left: 5px;
+  animation: float 4s ease-in-out infinite;
+}
+main {
+  padding: 20px;
+}
+h2 {
+  font-size: 16px;
+  margin: 20px 0 9px;
+}
+p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #a8b7cf;
+}
+#status {
+  border: 1px solid #304764;
+  background: #1c2a3e;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0b1019;
+  color: #dfeafa;
+  border: 1px solid #33445d;
+  border-radius: 10px;
+  padding: 12px;
+  resize: vertical;
+  font:
+    12px ui-monospace,
+    monospace;
+  outline-offset: 3px;
+}
+button {
+  border: 0;
+  background: #72b9ff;
+  color: #10223b;
+  border-radius: 10px;
+  padding: 12px 14px;
+  width: 100%;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  margin-top: 10px;
+}
+button:hover {
+  filter: brightness(1.1);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.secondary {
+  background: #26364c;
+  color: #e6f1ff;
+}
+.stop {
+  background: #412736;
+  color: #ffbbcf;
+}
+.link {
+  background: transparent;
+  color: #96accb;
+  padding: 8px;
+}
+.foot {
+  font-size: 10px;
+  color: #8293ad;
+  margin: 22px 0 0;
+}
+button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+@keyframes float {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pet {
+    animation: none;
+  }
+}

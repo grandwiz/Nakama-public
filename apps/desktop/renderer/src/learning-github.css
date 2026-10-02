@@ -1,0 +1,204 @@
+.learning-intro {
+  display: flex;
+  gap: 20px;
+  padding: 24px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+.learning-intro > svg {
+  flex-shrink: 0;
+  color: var(--accent, #4d87ad);
+  margin-top: 4px;
+}
+.learning-intro p {
+  margin: 8px 0 0;
+  line-height: 1.65;
+}
+.skill-controls {
+  padding: 10px 24px;
+  margin-bottom: 22px;
+}
+.skill-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(340px, 1.25fr);
+  gap: 24px;
+  align-items: start;
+}
+.skill-editor {
+  padding: 24px;
+}
+.plain-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.skill-editor label,
+.github-form label {
+  display: grid;
+  gap: 7px;
+  margin: 16px 0;
+  font-weight: 600;
+}
+.skill-editor input:not([type="checkbox"]),
+.skill-editor textarea,
+.github-form input,
+.github-form select,
+.github-form textarea {
+  width: 100%;
+}
+.skill-editor .check-label,
+.check-label {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 13px;
+}
+.check-label input {
+  width: auto;
+  flex-shrink: 0;
+}
+.skill-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+.skill-heading h3 {
+  margin: 0;
+}
+.skill-state {
+  font-size: 11px;
+  background: rgba(91, 162, 124, 0.13);
+  border-radius: 12px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+.skill-card {
+  padding: 23px;
+  margin-bottom: 16px;
+}
+.skill-card.candidate {
+  border-left: 4px solid #d8af73;
+}
+.skill-card.candidate .skill-state {
+  background: rgba(216, 175, 115, 0.17);
+}
+.skill-card p,
+.skill-card li {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.skill-card details {
+  padding: 10px 0;
+}
+.skill-card summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.skill-card ol {
+  padding-left: 22px;
+}
+.skill-card li {
+  margin: 8px 0;
+}
+.button-row {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.github-project-panel {
+  padding: 24px;
+  margin: 20px 0;
+}
+.github-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.github-heading h3 {
+  margin: 0;
+}
+.github-heading p {
+  margin: 6px 0 0;
+}
+.github-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+}
+.github-review {
+  border: 1px solid var(--border, #dce3ea);
+  border-radius: 12px;
+  padding: 18px;
+  margin-top: 18px;
+}
+.github-files {
+  max-height: 240px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+}
+.github-files label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.github-files input {
+  width: auto;
+}
+.github-repository-list {
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow: auto;
+  margin: 15px 0;
+}
+.github-repository-choice {
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--border, #dce3ea);
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.github-repository-choice[aria-pressed="true"] {
+  border-color: #5595c2;
+  background: rgba(85, 149, 194, 0.1);
+}
+.github-repository-choice strong,
+.github-repository-choice small {
+  display: block;
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.github-receipt {
+  margin-top: 16px;
+  overflow-wrap: anywhere;
+}
+.github-review pre {
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+@media (max-width: 1080px) {
+  .skill-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 740px) {
+  .github-columns {
+    grid-template-columns: 1fr;
+  }
+  .skill-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

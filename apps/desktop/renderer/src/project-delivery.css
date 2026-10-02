@@ -1,0 +1,269 @@
+.delivery-page {
+  max-width: 1350px;
+  margin: 0 auto;
+}
+.delivery-intro {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 22px;
+  background: linear-gradient(
+    120deg,
+    var(--surface),
+    var(--blue-light, #eff5ff)
+  );
+}
+.delivery-intro h3,
+.delivery-section-heading h3 {
+  margin: 0 0 6px;
+}
+.delivery-intro p,
+.delivery-section-heading p {
+  margin: 5px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.delivery-project {
+  display: block;
+  max-width: 520px;
+  margin: 20px 0;
+  font-weight: 600;
+}
+.delivery-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.delivery-side {
+  display: grid;
+  gap: 20px;
+}
+.delivery-coordinator {
+  margin-bottom: 22px;
+}
+.delivery-coordinator .delivery-plan-actions > label {
+  min-width: 240px;
+  flex: 1;
+}
+.delivery-summary {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.delivery-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.delivery-section-heading > svg {
+  flex-shrink: 0;
+  color: var(--blue);
+  margin-top: 3px;
+}
+.delivery-page fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.delivery-page label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+.delivery-page input:not([type="checkbox"]),
+.delivery-page select,
+.delivery-page textarea {
+  display: block;
+  width: 100%;
+  margin: 7px 0 12px;
+}
+.delivery-page label small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.45;
+  margin: -6px 0 10px;
+}
+.delivery-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 15px 0;
+}
+.delivery-field-grid .delivery-wide {
+  grid-column: 1/-1;
+}
+.delivery-page label.delivery-check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 6px 0;
+}
+.delivery-check input {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+.delivery-targets legend {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.delivery-optional {
+  margin-left: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.delivery-help {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.delivery-notice {
+  background: var(--blue-light, #eff5ff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.delivery-small-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+}
+.delivery-small-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+.delivery-small-list small,
+.delivery-handoff small {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.delivery-handoff {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.delivery-plans,
+.delivery-receipts,
+.delivery-grants,
+.delivery-grant-editor {
+  margin-top: 22px;
+}
+.delivery-plan,
+.delivery-receipt {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-top: 14px;
+}
+.delivery-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+.delivery-card-heading h4 {
+  margin: 5px 0;
+  font-size: 14px;
+}
+.delivery-plan > p,
+.delivery-receipt > p {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.delivery-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 22px;
+  background: var(--surface-hover, #f7f9fd);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 14px 0;
+}
+.delivery-settings dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.delivery-settings dd {
+  margin: 4px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.delivery-plan > small,
+.delivery-receipt small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.delivery-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+.delivery-grant-run {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.delivery-grant-run label {
+  flex: 1;
+  min-width: 220px;
+}
+.delivery-grant-editor {
+  border-color: var(--blue);
+}
+@media (max-width: 1050px) {
+  .delivery-columns {
+    grid-template-columns: 1fr;
+  }
+  .delivery-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .delivery-side,
+  .delivery-field-grid,
+  .delivery-settings {
+    grid-template-columns: 1fr;
+  }
+  .delivery-intro {
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .delivery-intro > .mascot {
+    width: 55px;
+    flex-shrink: 0;
+  }
+  .delivery-card-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+}

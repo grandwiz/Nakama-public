@@ -1,0 +1,28 @@
+# Monitoring and Dynamic upgrade implementation plan
+
+Design baseline: focus on the existing reliability gaps needed for these features; use a configurable 60-second monitoring interval, no paid model calls, a running Windows host, dedicated persistent Nakama sessions, and human payment/order completion. Each prepared update requires approval. Shops are selected by URL and locale, not a hardcoded country. This plan precedes implementation; verification and the feature guides record what actually ships.
+
+## Monitoring
+
+1. Add durable, revision-checked monitor records and a bounded local scheduler. Ordinary checks make no model call. Save target, exact condition, cadence, next check, actual outcomes and generic attention. Support pause, explicit resume, expiry, removal, failure backoff, no overlapping checks and no missed-check burst after sleep. Web content cannot change permissions or issue instructions.
+2. Monitor public website evidence with exact positive/negative conditions and stock signals, using the existing public-address network protections. Ambiguous results stay unknown. Queue, CAPTCHA, rate limiting, sign-in and changed page structure pause for human attention. Preserve the same browser session on queue/CAPTCHA; never evade challenges or refresh an active queue.
+3. Add dedicated persistent private shopping profiles, with explicit setup and forget controls. The user signs in and checks their own delivery details in Nakama's browser. Store cookies in the dedicated Chromium profile, never passwords, addresses or payment data in chat, model context, monitor records or reports. Existing research/project/private modes retain their boundaries; no installed profile is imported.
+4. Separate stock detection from checkout. A supported deterministic merchant adapter may prepare the exact approved product/variant/quantity within a price limit and expiry. It must stop before payment, order placement, one-click purchase or an ambiguous action. No generic LLM receives an authenticated page. Unsupported shops offer a truthful private manual handoff; shop-specific checkout is never described as accepted without real acceptance. The design accommodates different countries/currencies without assuming every website has the same checkout.
+5. Route generic Windows/Android alerts to current permitted records. A tap or direct “open the CAPTCHA/checkout” request resolves current state and acquires fresh private browser access; stale notices never replay work. Android access remains tied to selected paired devices and permissions. Offline/background limits remain visible.
+6. Add read-only application monitoring: scoped Windows process/window observations and a separately consented Android exact-app observer where supported. No hidden cross-app input, protected-screen capture or reuse of human remote-control authority. Explain unavailable, stale, locked and offline states rather than asserting success.
+
+## Dynamic upgrade
+
+1. Add saved self-maintenance requests, readiness and progress. Preserve saved configurable roles, manager-routed questions and both independent reviews. Requests may be saved while provider use is on hold; no date-triggered or paid retry. Starting a real development run requires explicit release by the user after allowance returns.
+2. Prepare an isolated source candidate from a bounded source export, excluding runtime state, accounts, cookies, reports, personal checklist values, signing keys and generated installers. Never patch the running installation. Work uses the existing managed plan/implement/check/repair/review pipeline and its exact command approvals.
+3. Bind candidate readiness to actual check receipts, reviewed source identity and both review results. Build packages separately; artifact hashes establish integrity, and a configured trusted publisher signature establishes provenance. The current unsigned Windows preview cannot silently qualify as a signed release.
+4. Require a fresh PC approval for the exact verified update artifact. Check idle/quiescent state, signature/hash, compatible app identity and backup/rollback availability. Save attempts before dispatch; uncertain or interrupted installation never auto-retries. Preserve private state and the Android signing identity; Android installation remains a user-controlled platform operation.
+5. Provide explicit recovery information and retained previous artifact/data backup. Do not claim automatic recovery from arbitrary schema changes or a healthy installed version based only on installer launch. Installation and post-restart health need separate receipts.
+
+## Delivery and acceptance
+
+Implement the backend, Windows/Android controls, caller-specific navigation and privacy/recovery regressions. Run synthetic host/native/Android checks with disposable fixtures only, rebuild affected installers, verify the package manifest and standalone Kling bundle, and preserve all existing personal checklist values. Two independent code reviews check the implementation before completion.
+
+Update README, requirements, status, feature guides, verification and continuation notes, then commit reviewed source to the selected repository. Keep Kling disabled. Do not call live project agents, spend credits, purchase, send messages/calls, deploy, change DNS, use physical devices as fixtures, change visibility or rewrite history.
+
+Public release remains a separate decision: review a clean source export and historical personal assets, choose a clean public snapshot versus an explicitly authorised history rewrite, protect runtime/signing/browser data, establish production signing/update trust and complete live/physical/security acceptance. Current-tree cleanup alone does not clean history.

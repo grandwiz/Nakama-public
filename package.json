@@ -1,0 +1,96 @@
+{
+  "name": "nakama-control-center",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A personal companion powered by ChatGPT and Claude agents, with Windows and Android apps",
+  "author": "Qodelive",
+  "license": "MIT",
+  "type": "module",
+  "main": "apps/desktop/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && npm run build:mcp",
+    "start": "electron .",
+    "test": "node --test tests/*.test.mjs",
+    "host": "node apps/host/standalone.mjs",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "pack:win": "npm run build && electron-builder --win dir --x64",
+    "build:mcp": "node scripts/build-kling-mcp.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "lucide-react": "1.48.0",
+    "qrcode": "1.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "selfsigned": "5.5.0",
+    "zod": "3.25.76"
+  },
+  "build": {
+    "appId": "dev.qodelive.nakama",
+    "productName": "Nakama Control Center",
+    "directories": {
+      "output": "output/installers"
+    },
+    "files": [
+      "apps/desktop/main.cjs",
+      "apps/desktop/preload.cjs",
+      "apps/desktop/remote-*",
+      "apps/desktop/browser-*.cjs",
+      "apps/desktop/project-reports.cjs",
+      "apps/desktop/desktop-attention.cjs",
+      "apps/desktop/self-maintenance*",
+      "apps/desktop/assets/**",
+      "apps/desktop/dist/**",
+      "apps/host/**",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "apps/desktop/remote-input.ps1"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "apps/desktop/assets/icon.ico",
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true
+    },
+    "extraFiles": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.nakama.txt"
+      },
+      {
+        "from": "NOTICE.md",
+        "to": "NOTICE.nakama.md"
+      },
+      {
+        "from": "docs/third-party-runtime-notices.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "output/kling-mcp/server.mjs",
+        "to": "kling-mcp/server.mjs"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2",
+    "vite": "8.3.1"
+  }
+}

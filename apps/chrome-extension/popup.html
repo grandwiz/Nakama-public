@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Nakama</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="pet" aria-hidden="true">••</span>
+      <div>
+        <h1>Nakama</h1>
+        <p>Your private browser companion</p>
+      </div>
+    </header>
+    <main>
+      <div id="status" role="status">Checking connection…</div>
+      <section id="pair">
+        <h2>Link this browser</h2>
+        <p>
+          In Control Center, open Devices, choose Chrome, and create a pairing
+          ticket. Paste its JSON below.
+        </p>
+        <textarea
+          id="ticket"
+          rows="4"
+          placeholder="Paste pairing details"
+          aria-label="Pairing details"
+        ></textarea
+        ><button id="connect">Connect to Control Center</button>
+      </section>
+      <section id="controls" hidden>
+        <h2>You're in control</h2>
+        <p>
+          Allow the current tab for two hours. Nakama can then read and interact
+          with this website when you request an action. Screenshots require this
+          tab to stay visible in the focused Chrome window.
+        </p>
+        <button id="allow">Allow this tab</button
+        ><button id="poll" class="secondary">Check for requested actions</button
+        ><button id="stop" class="stop">Stop browser control</button
+        ><button id="disconnect" class="link">Disconnect this browser</button>
+      </section>
+      <p class="foot">
+        Local connection only · No provider passwords stored<br />Known
+        protected inputs are blocked. Screenshots are not guaranteed to redact
+        secrets. You can revoke this browser on the desktop.
+      </p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

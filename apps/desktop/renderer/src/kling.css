@@ -1,0 +1,68 @@
+.kling-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.kling-form-heading h3 {
+  margin: 0;
+}
+.kling-options {
+  margin: 18px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.kling-options summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.kling-options > div {
+  margin-top: 16px;
+}
+.kling-code,
+.kling-config {
+  width: 100%;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 16px;
+  background: var(--surface);
+  color: var(--text);
+  font:
+    12px/1.8 ui-monospace,
+    monospace;
+}
+.kling-setup {
+  padding-left: 22px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.kling-setup li + li {
+  margin-top: 8px;
+}
+.kling-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.kling-results small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.media-cost-card > .toggle-row {
+  padding: 18px 0;
+}
+@media (max-width: 700px) {
+  .kling-form-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

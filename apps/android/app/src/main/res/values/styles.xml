@@ -1,0 +1,10 @@
+<resources>
+    <string name="control_stop_seconds">STOP · %1$ds</string>
+    <style name="Theme.Nakama" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#81A8FF</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <string name="accessibility_description">Optional phone control. During a two-minute session you start for one app, blue edges and a STOP button remain visible; a blue cursor marks requested controls. Explicit requests can read bounded visible labels to your PC, tap, type, scroll or go back. Editable values, password screens, authentication, payment controls and Android settings are excluded. Publishing and project deletion require you. No screen recording runs. Stop with the floating STOP button, Nakama notification or mascot.</string>
+</resources>
