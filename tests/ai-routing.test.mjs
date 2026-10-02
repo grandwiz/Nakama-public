@@ -101,7 +101,7 @@ test("fast reply settings, effective task effort and phase receipts preserve man
     ),
     { status: 403 },
   );
-  const result = await ask(host, null, "Hello", paired.principal);
+  const result = await ask(host, null, "Explain how rainbows form", paired.principal);
   await until(() => calls.length === 1);
   assert.equal(calls[0].provider.selectedModel, "gpt-6-astra");
   assert.equal(calls[0].provider.effort, "low");

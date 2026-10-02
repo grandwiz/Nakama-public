@@ -166,7 +166,7 @@ test("paired phones cannot inspect or edit the collection and Google-disabled ph
       ),
       { status: 403 },
     );
-  const enabled = await ask("Hello", {}, device.principal);
+  const enabled = await ask("Explain how rainbows form", {}, device.principal);
   assert.match(enabled.options.prompt, /PRIVATE_MEMORY_MARKER/);
   const callsBefore = calls.length;
   await host.store.change((value) => {

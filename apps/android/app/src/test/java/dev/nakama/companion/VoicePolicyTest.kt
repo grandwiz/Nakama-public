@@ -34,4 +34,13 @@ class VoicePolicyTest {
         assertEquals(RecognitionMode.SYSTEM, VoicePolicy.recognitionMode(false, true, true))
         assertEquals(RecognitionMode.UNAVAILABLE, VoicePolicy.recognitionMode(false, false, true))
     }
+    @Test fun longSpeechChunksPreserveRecipeTextAndBoundEachEngineUtterance() {
+        val recipe = (1..900).joinToString(" ") { "Step $it: stir the pot." }
+        val chunks = VoicePolicy.speechChunks(recipe)
+        assertTrue(chunks.size > 1); assertTrue(chunks.all { it.length <= 3_000 })
+        assertEquals(recipe, chunks.joinToString(" "))
+        assertTrue(VoicePolicy.speechChunks("   ").isEmpty())
+        assertFalse(VoicePolicy.speechChunks("Text ```private code``` answer").joinToString(" ").contains("private code"))
+    }
+
 }

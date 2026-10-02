@@ -172,6 +172,8 @@ class NakamaAccessibilityService : AccessibilityService() {
             val service = instance ?: return ActionResult("needs_permission", "Enable Nakama in Android Accessibility settings first.")
             require(packageName.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+"))) { "Provide the exact target app's package name." }
             if (blocked(packageName)) return ActionResult("blocked", "Choose a normal app, such as com.whatsapp or com.discord.")
+            if (!InstalledApps.contains(service, packageName)) return ActionResult("blocked", "Choose an installed, launchable app.")
+            val appName = InstalledApps.label(service, packageName)
             stopSession()
             if (!MascotOverlayService.running) return ActionResult("needs_permission", "Enable the floating mascot first, then start phone control.")
             if (service.getSystemService(KeyguardManager::class.java).isDeviceLocked) return ActionResult("needs_user", "Unlock the phone before starting phone control.")
@@ -184,7 +186,7 @@ class NakamaAccessibilityService : AccessibilityService() {
             activePackage = packageName; remainingSeconds = 120; lastAction = "Waiting for an explicit action"
             val stop = PendingIntent.getActivity(service, 42, Intent(service, MainActivity::class.java).putExtra("stop_control", true).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             try { manager.notify(42, Notification.Builder(service, "nakama_control").setSmallIcon(R.drawable.ic_nakama)
-                .setContentTitle("Nakama phone control is on").setContentText("$packageName · expires in two minutes")
+                .setContentTitle("Nakama phone control is on").setContentText("$appName · expires in two minutes")
                 .setContentIntent(stop).addAction(Notification.Action.Builder(null, "STOP", stop).build()).setOngoing(true).build()) }
             catch (_: Exception) { stopSession(); return ActionResult("failed", "Android could not show the control notification. Control remains off.") }
             handler.removeCallbacksAndMessages(null)
@@ -198,7 +200,7 @@ class NakamaAccessibilityService : AccessibilityService() {
                 }
             }
             handler.postDelayed(tick, 1000)
-            return ActionResult("completed", "Control is enabled for $packageName for two minutes. Blue edges mark the session and a blue cursor marks requested actions. STOP ends it immediately. Open the app; each action still needs an explicit host request.")
+            return ActionResult("completed", "Control is enabled for $appName for two minutes. Blue edges mark the session and a blue cursor marks requested actions. STOP ends it immediately. Open the app; each action still needs an explicit host request.")
         }
         fun stopSession() {
             session.stop(); activePackage = ""; remainingSeconds = 0; lastAction = "Control is off"

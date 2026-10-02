@@ -43,3 +43,42 @@ The source repository does not contain installed packages, private acceptance re
 - Windows preview builds are unsigned. They cannot pass the signed update gate. Signed installation, restart health and deliberate recovery remain unaccepted; recovery is manual.
 
 Use [Monitoring](monitoring.md), [Dynamic upgrade](dynamic-upgrade.md), [Security](security.md) and the [testing guide](testing-guide.md) for their operational boundaries. Never use a real purchase, message, deployment or billing change as a disposable test fixture.
+
+## App selection and voice preview verification (2026-10-02)
+
+These checks were run in the public checkout for the app-name selectors, Android wake/reply mode and miniature-computer activity changes:
+
+| Check | Actual result |
+| --- | --- |
+| Host tests | 611 passed, zero failed, one optional skip (612 total); synthetic/disposable fixtures only. |
+| Windows build | Strict TypeScript, Vite, standalone MCP bundle and local unsigned NSIS installer passed. The existing bundle-size advisory remains. |
+| Desktop selector fixture | Passed friendly labels, duplicate-name selection, exact device/package submission, stale device response, expiry, monitoring and revocation checks. |
+| Android JVM/build | 94 tests passed, zero failures/errors; app and instrumentation APK builds passed with cached offline dependencies. |
+| Android lint | Zero errors, 34 warnings and two informational hints. |
+| Android 16 focused emulator tests | All 35 distinct cases passed after correcting the picker test to scroll its bounded dropdown: nine voice-controller, seven wake-conversation, two voice/text-mode, two voice-settings, two installed-picker, four Mote, five monitoring/upgrade, three autonomous-task and one visible-control case. The first combined run had 34 passes and that one fixture failure; the corrected two-case picker rerun passed. |
+| Package identity | APK signature verified; dev.nakama.companion, version 0.1.0, versionCode 2, existing local debug signing configuration. No production release claim. |
+| Package contents/integrity | verify-packages.mjs passed for the rebuilt Windows installer, APK and copied blank public checklist. verify-kling-package.mjs passed for 73 packaged source/renderer files and the standalone MCP bundle; no Kling generation occurred. |
+| Runtime notices | npm source inventory and packaged Windows notices passed. LF checkout rules fix byte-level notice verification across platforms; dependency versions and notice text were unchanged. Android production notices remain unfinished. |
+
+Only a fresh disposable emulator received instrumentation; no personal phone/tablet profile was a test fixture. Voice playback, recognition and host/model responses used fakes. Actual microphone recognition, background survival, recipe/conversation quality, alarm sound and third-party app outcomes remain owner acceptance. No live model, paid fallback, purchase, message, call, deployment or DNS change was performed. The owner requested manual APK installation; no physical-device installation was performed. This first preview preceded the feedback follow-up below.
+
+## Clock, response latency and wake follow-up (2026-10-02)
+
+The feedback follow-up adds local greetings/time/date, built-in PC and Android timers, actual wake readiness/model diagnostics and continuous on-device wake input to avoid the old timeout/restart chime loop.
+
+| Check | Actual result |
+| --- | --- |
+| Full host suite | 619 passed, zero failed, one optional skip (620 total). No live models. |
+| Desktop | TypeScript/Vite/MCP and unsigned Windows installer built. Native Clock fixture passed all six checks, including response-loss deduplication; installed-app selector regression fixture passed all six checks. |
+| Android build/JVM | App and instrumentation APKs built; 114 JVM tests passed without failures or errors. |
+| Android lint | Zero errors, 38 warnings and two informational hints. The receiver action-dispatch warning is documented as a delegated check in the nonexported local timer receiver. |
+| Android emulator | Final combined run: 41 passed. Three Clock, eleven voice-controller, eight wake-conversation, two reply-mode, two voice-settings, two app-selector, four Mote, five monitoring/upgrade, three autonomous-task and one visible-control case. Crash buffer was empty. |
+| APK identity | dev.nakama.companion, versionName 0.1.0, versionCode 3; signature verified against the same local debug certificate used for the earlier preview. |
+| Package checks | verify-packages.mjs passed the rebuilt APK/Windows installer and blank public checklist. verify-kling-package.mjs checked 75 packaged source/renderer files and the standalone MCP bundle. Source npm notices and Windows binary notices passed. |
+| Source review | Independent reviews checked clock authority/persistence, Android alarm lifecycle and continuous wake cleanup. Encoding, diff and public-source audits passed. |
+
+The first host run exposed six fixtures that used a greeting to expect a model worker; they now use a nonlocal question while retaining their original role/permission assertions. A later loaded run exposed a timed cancellation fixture; it now waits for actual child readiness and uses an explicit release gate, preserving ownership/revocation and file-absence assertions. The final full suite passed.
+
+The first 41-case Android run passed 39 and exposed two Clock fixture defects: scrolling before Compose/accessibility updated, and using the test-package context to persist state. Corrected frame/scroll synchronization and an isolated target-context preference file passed in the final full rerun. Alarm and audio effects remain synthetic; no physical phone/tablet received instrumentation or installation.
+
+Local time/greeting checks prove there is no PC/model dependency; they do not establish end-to-end physical microphone/TTS latency. Continuous segmentation and any recognizer start sound depend on the installed engine. Real wake detection, background survival, battery use and timer sound remain owner acceptance. The owner installs the APK/Windows preview manually. Packages, runtime profiles and generated reports remain outside Git; this does not clear production binary release gates.

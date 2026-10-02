@@ -14,6 +14,7 @@ import {
   defaultProjectTeam,
   validateProjectTeam,
 } from "./project-workflows.mjs";
+import { defaultClock } from "./clock-timers.mjs";
 import { defaultCompanionMemory } from "./companion-memory.mjs";
 import { defaultSkillLibrary } from "./learned-skills.mjs";
 import {
@@ -100,6 +101,7 @@ export function initialState() {
     skillLibrary: defaultSkillLibrary(),
     taskBoard: defaultTaskBoard(),
     routineBoard: defaultRoutineBoard(),
+    clock: defaultClock(),
     deviceLocations: [],
     agentOffice: defaultAgentOffice(),
     approvals: [],
@@ -206,6 +208,7 @@ export class Store extends EventEmitter {
     this.state.skillLibrary.capturedWorkflows ||= [];
     this.state.taskBoard ||= defaultTaskBoard();
     this.state.routineBoard ||= defaultRoutineBoard();
+    this.state.clock ||= defaultClock();
     this.state.deviceLocations ||= [];
     for (const workflow of this.state.projectWorkflows)
       if (workflow.status === "running") {
@@ -338,6 +341,7 @@ export class Store extends EventEmitter {
     delete data.klingJobs;
     delete data.taskBoard.removedSourceIds;
     delete data.routineBoard.requestReceipts;
+    delete data.clock;
     data.projectWorkflows = data.projectWorkflows.map(
       ({ snapshot, workspaceRoot, projectPath, ...workflow }) => workflow,
     );

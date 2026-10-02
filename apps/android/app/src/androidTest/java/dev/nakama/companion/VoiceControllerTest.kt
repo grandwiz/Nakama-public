@@ -204,4 +204,54 @@ class VoiceControllerTest {
         assertEquals("Single-turn Talk must not become hands-free", 3, services.requests.size)
         controller.close()
     }
+    @Test fun replyWaitsForOfflineInitializationAndStopDiscardsDeferredPlayback() = main {
+        val services = FakeVoiceServices().apply { output.autoInitialize = false }
+        val controller = VoiceController(services, MemoryVoicePreferences(), {}, {})
+        controller.speak("Reply before the offline engine starts")
+        assertTrue(services.output.spoken.isEmpty())
+        services.output.ready(true)
+        assertEquals("Reply before the offline engine starts", services.output.spoken.single().first)
+        controller.close()
+        val stoppedServices = FakeVoiceServices().apply { output.autoInitialize = false }
+        val stopped = VoiceController(stoppedServices, MemoryVoicePreferences(), {}, {})
+        stopped.speak("Stopped reply"); stopped.stop(); stoppedServices.output.ready(true)
+        assertTrue(stoppedServices.output.spoken.isEmpty()); stopped.close()
+    }
+    @Test fun longAnswerSpeaksAllChunksAndPausingCaptureDoesNotCutOffSpeech() = main {
+        val services = FakeVoiceServices(); val controller = VoiceController(services, MemoryVoicePreferences(), {}, {})
+        val recipe = (1..650).joinToString(" ") { "Step $it: stir." }
+        val expected = VoicePolicy.speechChunks(recipe)
+        controller.listen(true); controller.speak(recipe); controller.pauseCapture()
+        for (index in expected.indices) {
+            assertEquals(expected[index], services.output.spoken[index].first)
+            services.output.finished(services.output.spoken[index].second, true)
+        }
+        assertEquals(expected.size, services.output.spoken.size)
+        assertEquals("Background pause cannot restart the microphone", 1, services.requests.size)
+        assertTrue(controller.replyPlaybackAvailable); controller.close()
+    }
+
+    @Test fun segmentedCallbackWiringKeepsPartialTextSeparateFromCompletedSegments() {
+        val partials = mutableListOf<String>(); val segments = mutableListOf<String>(); val finals = mutableListOf<String>(); var ended = 0
+        val listener = recognitionCallbacks({}, {}, finals::add, {}, partials::add, segments::add, { ended++ })
+        fun result(text: String) = Bundle().apply { putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text)) }
+        listener.onPartialResults(result("Nakama send"))
+        assertEquals(listOf("Nakama send"), partials); assertTrue(segments.isEmpty()); assertTrue(finals.isEmpty())
+        listener.onSegmentResults(result("Nakama what time is it"))
+        assertEquals(listOf("Nakama what time is it"), segments); assertTrue(finals.isEmpty())
+        listener.onEndOfSegmentedSession(); assertEquals(1, ended)
+    }
+    @Test fun continuousIntentUsesOnlyTheEphemeralPcmPipeAndClosesWithoutOpeningAMicrophone() = main {
+        val source = LocalPcmSource { fail("No microphone or audio thread was started") }
+        val descriptor = source.descriptor.fileDescriptor
+        val intent = speechIntent("en-US", source.descriptor)
+        assertEquals("en-US", intent.getStringExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE))
+        assertEquals(android.speech.RecognizerIntent.EXTRA_AUDIO_SOURCE, intent.getStringExtra(android.speech.RecognizerIntent.EXTRA_SEGMENTED_SESSION))
+        assertEquals(16_000, intent.getIntExtra(android.speech.RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, 0))
+        assertTrue(intent.getBooleanExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false))
+        assertTrue(intent.getBooleanExtra(android.speech.RecognizerIntent.EXTRA_PREFER_OFFLINE, false))
+        assertTrue(descriptor.valid()); source.close(); source.close(); assertFalse(descriptor.valid())
+        assertFalse(speechIntent().hasExtra(android.speech.RecognizerIntent.EXTRA_AUDIO_SOURCE))
+    }
+
 }

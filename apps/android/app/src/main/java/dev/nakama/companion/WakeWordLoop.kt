@@ -11,42 +11,71 @@ internal class WakeWordLoop(
     private var recognition: VoiceRecognition? = null
     private var nextAttempt = 0L
     private var startedAt = 0L
+    private var readyAt: Long? = null
+    private var endedAt: Long? = null
+    private var finishing = false
     private var commandUntil = 0L
+    private var transientFailures = 0
+    private var stalledStarts = 0
     var enabled = false; private set
-    fun start() { stop(); enabled = true; nextAttempt = now(); onStatus("Enabled · waiting for local microphone") }
-    fun stop() { enabled = false; generation++; runCatching { recognition?.close() }; recognition = null; commandUntil = 0; onStatus("Off") }
+    fun start() { stop(); transientFailures = 0; stalledStarts = 0; enabled = true; nextAttempt = now(); onStatus("Starting local microphone - waiting for Android readiness") }
+    private fun release() { generation++; runCatching { recognition?.close() }; recognition = null; readyAt = null; endedAt = null; finishing = false }
+    fun stop() { enabled = false; release(); commandUntil = 0; onStatus("Off") }
     fun tick(audioBusy: Boolean) {
         if (!enabled) return
         if (audioBusy) {
-            if (recognition != null) { generation++; runCatching { recognition?.close() }; recognition = null }
-            commandUntil = 0; nextAttempt = now() + 700; onStatus("Paused · conversation or spoken reply"); return
+            if (recognition != null) release()
+            commandUntil = 0; nextAttempt = now() + 400; onStatus("Paused - another voice session is using audio"); return
         }
         if (commandUntil != 0L && now() > commandUntil) commandUntil = 0
         if (recognition != null) {
-            if (now() - startedAt > 25_000) { generation++; runCatching { recognition?.close() }; recognition = null; nextAttempt = now() + 1000 }
+            if (readyAt == null && now() - startedAt >= 8_000) {
+                release(); stalledStarts++
+                if (stalledStarts >= 3) { enabled = false; commandUntil = 0; onStatus("Paused - Android never reported microphone ready. Check Voice input settings, the offline model and the microphone privacy switch, then restart.") }
+                else { nextAttempt = now() + 300; onStatus("Restarting a stalled local microphone - attempt ${stalledStarts + 1} of 3") }
+            } else if (endedAt != null && now() - endedAt!! >= 6_000) {
+                val continuous = recognition?.continuousSession == true
+                release(); commandUntil = 0; nextAttempt = now() + 300
+                if (continuous) { enabled = false; onStatus("Paused - no continuous recognition result arrived. Use Talk or restart after checking your on-device service; no repeated restart sounds will be generated.") }
+                else onStatus("No final recognition result arrived. Listening will restart; repeat your wake request.")
+            } else if (recognition?.continuousSession != true && readyAt != null && now() - readyAt!! >= 25_000 && !finishing) {
+                finishing = true; endedAt = now(); runCatching { recognition?.stopListening() }
+                onStatus("Finishing the local recognition session")
+            }
             return
         }
         if (now() < nextAttempt) return
         val token = ++generation
-        startedAt = now()
+        startedAt = now(); readyAt = null; endedAt = null; finishing = false
+        fun current() = enabled && token == generation
         try {
             recognition = create({ text ->
-                if (enabled && token == generation) {
-                    generation++; runCatching { recognition?.close() }; recognition = null
-                    val command = if (commandUntil > now()) text.trim().take(24_000) else FoundationPolicy.wakeCommand(text)
-                    if (command != null && command.isBlank()) { commandUntil = now() + 15_000; nextAttempt = now() + 300; onStatus("Nakama heard · say your command") }
-                    else if (!command.isNullOrBlank()) { commandUntil = 0; nextAttempt = now() + 5000; onStatus("Command heard · opening Nakama"); onCommand(command) }
-                    else { nextAttempt = now() + 700; onStatus("Listening locally for Nakama") }
+                if (current()) {
+                    val continuous = recognition?.continuousSession == true
+                    if (!continuous) release() else { endedAt = null; finishing = false }
+                    transientFailures = 0
+                    val command = if (commandUntil > now()) FoundationPolicy.wakeCommand(text) ?: text.trim().take(24_000) else FoundationPolicy.wakeCommand(text)
+                    if (command != null && command.isBlank()) { commandUntil = now() + 15_000; nextAttempt = now() + 100; onStatus("Nakama heard - say your command") }
+                    else if (!command.isNullOrBlank()) { if (continuous) release(); commandUntil = 0; nextAttempt = now() + 250; onStatus("Command heard - asking Nakama"); onCommand(command) }
+                    else { nextAttempt = now() + 200; onStatus(if (continuous) "Microphone ready - continuous local wake listening" else "Waiting for the next local microphone session") }
                 }
             }, { error ->
-                if (enabled && token == generation) {
-                    generation++; runCatching { recognition?.close() }; recognition = null
-                    if (error in setOf(6, 7)) { nextAttempt = now() + 1000; onStatus("Listening locally for Nakama") }
-                    else { enabled = false; commandUntil = 0; onStatus("Paused · local recognizer error $error. Tap Enable to retry.") }
+                if (current()) {
+                    val continuous = recognition?.continuousSession == true
+                    release()
+                    if (continuous && error in setOf(-100, 6, 7)) { enabled = false; commandUntil = 0; onStatus("Paused - ${LocalRecognitionPolicy.error(-100)}") }
+                    else if (error in setOf(6, 7)) { transientFailures = 0; nextAttempt = now() + 200; onStatus("No wake phrase heard - restarting local listening") }
+                    else if (error in setOf(8, 10) && ++transientFailures <= 3) { nextAttempt = now() + if (error == 10) 30_000 else 500L * transientFailures; onStatus("Waiting for the local recognizer - retry $transientFailures of 3") }
+                    else { enabled = false; commandUntil = 0; onStatus("Paused - ${LocalRecognitionPolicy.error(error)}") }
                 }
             })
-            onStatus(if (commandUntil > now()) "Nakama heard · say your command" else "Listening locally for Nakama")
+            recognition?.observe(
+                { if (current()) { readyAt = now(); stalledStarts = 0; onStatus(if (commandUntil > now()) "Microphone ready - say your command" else "Microphone ready - listening for Nakama or Hey Nakama") } },
+                { if (current()) { endedAt = now(); onStatus("Speech ended - waiting for the local final result") } },
+                { text -> if (current() && FoundationPolicy.wakeCommand(text) != null) onStatus("Wake phrase heard - finish your request") },
+            )
+            onStatus("Starting local microphone - waiting for Android readiness")
             recognition?.start()
-        } catch (_: Exception) { enabled = false; generation++; runCatching { recognition?.close() }; recognition = null; onStatus("Unavailable · install on-device British English recognition") }
+        } catch (_: Exception) { enabled = false; release(); commandUntil = 0; onStatus("Unavailable - the local recognizer could not start. Open Android Voice input settings and install an offline English model.") }
     }
 }

@@ -36,6 +36,14 @@
         <service android:name=".WakeWordService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".ProjectPdfService" android:exported="false" android:isolatedProcess="true" android:process=":project_pdf" />
         <service android:name=".DeviceLocationService" android:exported="false" android:foregroundServiceType="location" />
+        <receiver android:name=".LocalTimerReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <receiver android:name=".PhoneAlarmReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.TIME_SET" /><action android:name="android.intent.action.TIMEZONE_CHANGED" /></intent-filter>
         </receiver>

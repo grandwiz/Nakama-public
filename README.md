@@ -7,7 +7,7 @@ Nakama is a Windows and Android personal assistant with configurable ChatGPT and
 
 ## What it does
 
-- Local tasks, routines, editable memory, learned methods and direct navigation.
+- Local tasks, routines, a built-in clock and timers, editable memory, learned methods and direct navigation.
 - Configurable manager, planners, developer and two independent reviewers; questions return through the manager. Local commands/checks and consequential operations retain their approval boundaries.
 - Projects, selected-file Git changes, scoped service adapters, local preview checks and reports with honest unverified outcomes.
 - Private browser handoffs; agents cannot read private sessions. Paired Android devices receive only permitted shared data.
@@ -40,7 +40,8 @@ For Android build commands and limitations, read [Android verification](apps/and
 1. Choose a dedicated workspace in Windows Control Center. Keep the host awake when using it from a phone.
 2. Check saved model roles and connect eligible accounts through the providers' official authentication flows. Subscriptions, hosting, domains and optional services may cost money; there is no automatic paid fallback.
 3. Enable the private-network listener deliberately and pair each trusted phone separately. Android pins the host certificate. Do not expose the host directly to the public internet.
-4. Try local commands such as “add task check my Nakama setup”. Then follow the [testing guide](docs/testing-guide.md).
+4. On Android, follow [the wake-word setup steps](docs/android-guide.md#optional-local-nakama-wake-word), including offline recognition, the visible listening status and battery settings. Microphone permission alone does not enable wake listening.
+5. Try local commands such as “add task check my Nakama setup”. Then follow the [testing guide](docs/testing-guide.md).
 
 Kling is optional and disabled by default. Every generation requires a separate PC approval and may consume credits. Deployment, DNS, command and source-write authority is scoped; page contents and models cannot grant permissions. Read [permissions and private data](docs/security.md).
 
@@ -49,6 +50,8 @@ Kling is optional and disabled by default. Every generation requires a separate 
 | Topic | Guide |
 | --- | --- |
 | Installation and pairing | [Quick start](docs/quick-start.md) |
+| Android wake word and voice setup | [Device-by-device instructions](docs/android-guide.md#optional-local-nakama-wake-word) |
+| Clock and timers | [Built-in clock](docs/clock.md) |
 | Team roles and development | [Project workflow](docs/project-workflow.md) |
 | General task coordination | [Autonomous tasks](docs/autonomous-tasks.md) |
 | Monitoring and shopping boundaries | [Monitoring](docs/monitoring.md) |

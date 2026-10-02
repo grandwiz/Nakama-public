@@ -4,6 +4,7 @@ import { api, previewMode } from "./bridge";
 import { Button, SectionTitle, Status, relativeDate } from "./components";
 import { useNakama } from "./context";
 import { DeviceResult } from "./device-result";
+import { InstalledAppSelect, useInstalledApps } from "./installed-apps";
 
 type ActionField = {
   key: string;
@@ -29,7 +30,7 @@ const phoneOptions: ActionOption[] = [
     fields: [
       {
         key: "packageName",
-        label: "App package name",
+        label: "Installed app",
         placeholder: "com.whatsapp",
       },
     ],
@@ -37,11 +38,11 @@ const phoneOptions: ActionOption[] = [
   {
     id: "open_app",
     label: "Open an app",
-    description: "Open an installed app by its Android package name.",
+    description: "Open an installed app on the selected device.",
     fields: [
       {
         key: "packageName",
-        label: "App package name",
+        label: "Installed app",
         placeholder: "com.whatsapp",
       },
     ],
@@ -104,7 +105,7 @@ const phoneOptions: ActionOption[] = [
     fields: [
       {
         key: "packageName",
-        label: "App package name",
+        label: "Installed app",
         placeholder: "com.whatsapp",
       },
       {
@@ -122,7 +123,7 @@ const phoneOptions: ActionOption[] = [
     fields: [
       {
         key: "packageName",
-        label: "App package name",
+        label: "Installed app",
         placeholder: "com.whatsapp",
       },
       { key: "text", label: "Text to enter", type: "textarea" },
@@ -136,7 +137,7 @@ const phoneOptions: ActionOption[] = [
     fields: [
       {
         key: "packageName",
-        label: "App package name",
+        label: "Installed app",
         placeholder: "com.whatsapp",
       },
     ],
@@ -148,7 +149,7 @@ const phoneOptions: ActionOption[] = [
     fields: [
       {
         key: "packageName",
-        label: "App package name",
+        label: "Installed app",
         placeholder: "com.whatsapp",
       },
     ],
@@ -284,6 +285,9 @@ export function DeviceActions() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [actions, setActions] = useState<DeviceAction[]>([]);
   const [busy, setBusy] = useState(false);
+  const installedApps = useInstalledApps(device?.id || "");
+  const needsApp = option.fields.some((field) => field.key === "packageName");
+  const validApp = installedApps.apps.some((app) => app.packageName === values.packageName);
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
@@ -306,6 +310,7 @@ export function DeviceActions() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!device) return;
+    if (needsApp && !validApp) { notify("Choose an app from the current device list.", true); return; }
     const args: Record<string, unknown> = {};
     for (const field of option.fields) {
       const value = values[field.key] || "";
@@ -369,6 +374,7 @@ export function DeviceActions() {
           <label className="field">
             Device
             <select
+              aria-label="Device"
               value={device.id}
               onChange={(event) => {
                 setDeviceId(event.target.value);
@@ -386,6 +392,7 @@ export function DeviceActions() {
           <label className="field">
             Action
             <select
+              aria-label="Action"
               value={option.id}
               onChange={(event) => {
                 setType(event.target.value);
@@ -409,7 +416,11 @@ export function DeviceActions() {
             >
               {field.label}
               {field.optional ? " · optional" : ""}
-              {field.type === "textarea" ? (
+              {field.key === "packageName" ? (
+                <InstalledAppSelect deviceId={device.id} value={values.packageName || ""}
+                  controlOnly={option.id !== "open_app"}
+                  onChange={(value) => setValues((current) => ({ ...current, packageName: value }))} />
+              ) : field.type === "textarea" ? (
                 <textarea
                   required={!field.optional && !field.allowEmpty}
                   value={values[field.key] || ""}
@@ -459,7 +470,7 @@ export function DeviceActions() {
               ? "Allow the target tab in the Chrome extension first."
               : "Keep Nakama open on the device. App-control actions require a live control session."}
           </p>
-          <Button type="submit" busy={busy}>
+          <Button type="submit" busy={busy} disabled={needsApp && !validApp}>
             <Send size={15} />
             Send action
           </Button>

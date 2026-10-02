@@ -51,6 +51,13 @@ open class MainActivity : ComponentActivity() {
     protected open val startWithVoice = false
     private lateinit var vault: PairingVault
     private lateinit var voice: VoiceController
+    private val screenOffReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                voiceLaunch.cancel(); clearPendingReplies(); voice.stop(); WakeWordService.stopReply?.invoke()
+            }
+        }
+    }
     private var identity by mutableStateOf<HostIdentity?>(null)
     private var state by mutableStateOf(JSONObject())
     private var stateIdentity by mutableStateOf<HostIdentity?>(null)
@@ -82,7 +89,9 @@ open class MainActivity : ComponentActivity() {
         set(value) { navigationReceipts.invalidate(); appSelection = null; cancelQuestionVoice(); currentFoundationPage = value }
     private var remoteVoiceCommand by mutableStateOf(0L to "")
     private var pendingWakeCommand: String? = null
+    private var pendingWakeCapturedAt = 0L
     private var foundationPermissionAction: String? = null
+    private var foundationPermissionMode = ReplyMode.TEXT
     private var alarmRevision: String? = null
     private var notice by mutableStateOf("")
     private var connection by mutableStateOf("Not paired")
@@ -101,7 +110,8 @@ open class MainActivity : ComponentActivity() {
     private var team by mutableStateOf(false)
     private var chatMode by mutableStateOf("Discuss")
     private var voiceState by mutableStateOf("Ready")
-    private var spokenReplies by mutableStateOf(true)
+    private var appSelectionMode = ReplyMode.TEXT
+    private var contactSelectionMode = ReplyMode.TEXT
     private var reduceMotion by mutableStateOf(false)
     private var confirmActions by mutableStateOf(false)
     private var themeChoice by mutableStateOf("System")
@@ -146,7 +156,7 @@ open class MainActivity : ComponentActivity() {
     }
     private val foundationPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { choices ->
         val action = foundationPermissionAction; foundationPermissionAction = null
-        if (foreground && action != null && choices.values.any { it }) foundationAction(action, false)
+        if (foreground && action != null && choices.values.any { it }) foundationAction(action, false, foundationPermissionMode)
         else notice = "Permission choices saved. Open Tools and start the feature when ready."
     }
 
@@ -157,12 +167,12 @@ open class MainActivity : ComponentActivity() {
         identity = vault.load()
         projectAlertsEnabled = ProjectAttention.enabled(this, identity)
         val prefs = getSharedPreferences("nakama_preferences", MODE_PRIVATE)
-        spokenReplies = prefs.getBoolean("spokenReplies", true)
         reduceMotion = prefs.getBoolean("reduceMotion", false)
         confirmActions = prefs.getBoolean("confirmActions", false)
         themeChoice = prefs.getString("theme", "System") ?: "System"
         mascotGrantPending = savedInstanceState?.getBoolean("mascotGrantPending") == true
-        voice = VoiceController(this, ::acceptVoiceText, { voiceState = it; if (it == "Ready") stateRefreshWake.trySend(Unit) })
+        voice = VoiceController(this, ::acceptVoiceText, { voiceState = it; MoteWorkSignals.setVoiceState("foreground", when { it.startsWith("Listening") || it.startsWith("Starting microphone") -> MoteVoiceState.LISTENING; it.startsWith("Speaking") -> MoteVoiceState.SPEAKING; else -> MoteVoiceState.IDLE }); if (it == "Ready") stateRefreshWake.trySend(Unit) })
+        registerReceiver(screenOffReceiver, android.content.IntentFilter(Intent.ACTION_SCREEN_OFF), android.content.Context.RECEIVER_NOT_EXPORTED)
         handleIntent(intent)
         setContent { NakamaApp() }
         if (startWithVoice) {
@@ -188,18 +198,22 @@ open class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume(); foreground = true
         WakeWordService.foregroundCommand = { text -> if (foreground) acceptVoiceText(text) }
+        runCatching { LocalTimers.restore(this) }
         overlayGranted = Settings.canDrawOverlays(this)
         if (mascotGrantPending && !mascotNotificationPending) {
             mascotGrantPending = false
             if (overlayGranted) startMascot() else notice = "The floating mascot is off. Enable Display over other apps to show it."
         }
+        if (getSharedPreferences("nakama_preferences", MODE_PRIVATE).getBoolean("wakeEnabled", false) && !WakeWordService.running && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            runCatching { ContextCompat.startForegroundService(this, Intent(this, WakeWordService::class.java)) }
+        }
         resumeVoiceLaunch()
         // The first short utterance must not race the background refresh interval.
         if (identity != null) stateRefreshWake.trySend(Unit)
-        pendingWakeCommand?.let { text -> pendingWakeCommand = null; getSystemService(android.app.NotificationManager::class.java).cancel(74); acceptVoiceText(text) }
+        consumeWakeCommand()
     }
-    override fun onPause() { foreground = false; WakeWordService.foregroundCommand = null; if (!voiceLaunch.awaitingPermissionResult) { voiceQuestionTarget = null; voiceIntakeTarget = null }; voiceLaunch.pause(); clearPendingReplies(); voice.stop(); super.onPause() }
-    override fun onDestroy() { voice.close(); super.onDestroy() }
+    override fun onPause() { foreground = false; WakeWordService.foregroundCommand = null; if (!voiceLaunch.awaitingPermissionResult) { voiceQuestionTarget = null; voiceIntakeTarget = null }; voiceLaunch.pause(); handoffSpokenReplies(); if (getSystemService(android.app.KeyguardManager::class.java).isDeviceLocked) voice.stop() else voice.pauseCapture(); super.onPause() }
+    override fun onDestroy() { unregisterReceiver(screenOffReceiver); voice.close(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("mascotGrantPending", mascotGrantPending); super.onSaveInstanceState(outState) }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent); handleIntent(intent)
@@ -207,23 +221,31 @@ open class MainActivity : ComponentActivity() {
     }
     private fun handleIntent(intent: Intent) {
         if (this is FoundationEntryActivity) {
-            intent.getStringExtra("foundation_page")?.takeIf { it in listOf("Tasks", "Monitoring", "Dynamic upgrade", "Routines", "Agent office", "Browser", "Project setup", "Account setup", "Skills", "Core Memory", "Remote PC", "Location", "Wake word") }?.let { foundationPage = it; tab = "Tools"; intent.removeExtra("foundation_page") }
+            intent.getStringExtra("foundation_page")?.takeIf { it in listOf("Tasks", "Clock", "Monitoring", "Dynamic upgrade", "Routines", "Agent office", "Browser", "Project setup", "Account setup", "Skills", "Core Memory", "Remote PC", "Location", "Wake word") }?.let { foundationPage = it; tab = "Tools"; intent.removeExtra("foundation_page") }
             val alert = intent.getStringExtra("attention_id"); val alertScope = intent.getStringExtra("attention_scope")
             if (alert != null && alert.length in 1..300 && alertScope?.matches(Regex("[a-f0-9]{64}")) == true) pendingAttention = Triple(alert, alertScope, intent.getBooleanExtra("attention_voice", false))
             intent.removeExtra("attention_id"); intent.removeExtra("attention_scope"); intent.removeExtra("attention_voice")
             if (pendingAttention != null) stateRefreshWake.trySend(Unit)
-            intent.getStringExtra("wake_command")?.take(24_000)?.let { pendingWakeCommand = it; intent.removeExtra("wake_command") }
-            if (foreground) pendingWakeCommand?.let { text -> pendingWakeCommand = null; getSystemService(android.app.NotificationManager::class.java).cancel(74); acceptVoiceText(text) }
+            intent.getStringExtra("wake_command")?.take(24_000)?.let { pendingWakeCommand = it; pendingWakeCapturedAt = intent.getLongExtra("wake_captured_at", 0); intent.removeExtra("wake_command"); intent.removeExtra("wake_captured_at") }
+            if (foreground) consumeWakeCommand()
         }
         if (intent.getBooleanExtra("stop_control", false)) { NakamaAccessibilityService.stopSession(); notice = "Phone control stopped."; tab = "Device" }
         if (intent.getBooleanExtra("open_chat", false)) tab = "Chat"
     }
+    private fun consumeWakeCommand() {
+        val command = pendingWakeCommand ?: return
+        pendingWakeCommand = null
+        getSystemService(android.app.NotificationManager::class.java).cancel(74)
+        if (WakeWordService.running && WakeCommandPolicy.fresh(pendingWakeCapturedAt, SystemClock.elapsedRealtime())) acceptVoiceText(command)
+        else notice = "That wake command expired. Say it again when ready."
+    }
     private fun preference(name: String, value: Boolean) { getSharedPreferences("nakama_preferences", MODE_PRIVATE).edit().putBoolean(name, value).apply() }
-    private fun launch(block: suspend () -> Unit) {
+    private fun launch(showWork: Boolean = true, block: suspend () -> Unit) {
         lifecycleScope.launch {
             busy = true
+            val moteWork = if (showWork) MoteWorkSignals.beginLocalWork() else null
             try { block() } catch (error: Exception) { notice = error.message ?: "Something went wrong. Try again." }
-            finally { busy = false }
+            finally { busy = false; moteWork?.let(MoteWorkSignals::endLocalWork) }
         }
     }
     private suspend fun api(method: String, path: String, body: JSONObject? = null): JSONObject {
@@ -231,6 +253,7 @@ open class MainActivity : ComponentActivity() {
         return withContext(Dispatchers.IO) { HostClient(saved).request(method, path, body) }
     }
     private fun clearHostContent() {
+        MoteWorkSignals.clearHost()
         monitoringDrafts.clear(); maintenanceDrafts.clear(); PhoneMonitorObserver.stop(this)
         stateRequestGeneration++
         state = JSONObject(); stateIdentity = null; selectedProject = ""; focusedWorkflowId = null; focusedIntakeId = null; voiceQuestionTarget = null; voiceIntakeTarget = null; connectionRequestId = null; checksProjectId = null; githubProjectId = null; filesProjectId = null; browserSessionId = null; importGithub = false
@@ -242,6 +265,7 @@ open class MainActivity : ComponentActivity() {
     private fun hostFailure(saved: HostIdentity, error: Exception) {
         if (identity != saved) return
         stateIdentity = null
+        MoteWorkSignals.clearHost(saved)
         voiceQuestionTarget = null; voiceIntakeTarget = null; ProjectAttention.clear(this)
         clearPendingReplies(); voice.stop()
         if (error is HostException && error.status == 401) {
@@ -253,11 +277,13 @@ open class MainActivity : ComponentActivity() {
     private suspend fun refreshSnapshot(saved: HostIdentity): JSONObject? = stateRefreshMutex.withLock {
         if (identity != saved) return@withLock null
         val generation = ++stateRequestGeneration
+        val moteRequestedAt = SystemClock.elapsedRealtime()
         try {
             val next = withContext(Dispatchers.IO) { HostClient(saved).request("GET", "/api/state") }
             if (identity != saved || generation != stateRequestGeneration) return@withLock null
             val previouslyAllowed = chatAllowed()
             state = next; stateIdentity = saved
+            MoteWorkSignals.updateHost(saved, next, moteRequestedAt)
             if (selectedProject.isNotBlank() && next.objects("projects").none { it.optString("id") == selectedProject }) selectedProject = ""
             connection = "Connected to ${saved.name}"
             projectAlertsEnabled = ProjectAttention.enabled(this, saved)
@@ -291,6 +317,18 @@ open class MainActivity : ComponentActivity() {
         refreshConversation()
         pollActions()
     }
+    private fun handoffSpokenReplies() {
+        val saved = identity ?: return
+        val tasks = pendingSpeechTasks.filterValues { it == replySession }.keys.toList()
+        val workflows = pendingSpeechWorkflows.filterValues { it == replySession }.keys.toList()
+        val receipts = mutableListOf<JSONObject>()
+        if (tasks.isNotEmpty()) receipts += JSONObject().put("taskIds", org.json.JSONArray(tasks))
+        workflows.forEach { receipts += JSONObject().put("workflowId", it).put("spokenMessageIds", org.json.JSONArray(spokenWorkflowMessages.toList())) }
+        if (receipts.isNotEmpty() && WakeWordService.continueReplies?.invoke(saved, receipts) == true) {
+            tasks.forEach(pendingSpeechTasks::remove); workflows.forEach(pendingSpeechWorkflows::remove)
+            pendingReplies.resolve((tasks + workflows.map { "workflow:$it" }).toSet()); replyWaitStartedAt = pendingReplies.oldestStartedAt
+        }
+    }
     private fun clearPendingReplies() { ++replySession; navigationReceipts.invalidate(); appSelection = null; pendingSpeechTasks.clear(); pendingSpeechWorkflows.clear(); spokenWorkflowMessages.clear(); spokenAcknowledgements.clear(); pendingReplies.clear(); replyWaitStartedAt = null }
     private suspend fun refreshConversation() {
         val saved = identity ?: return
@@ -310,7 +348,7 @@ open class MainActivity : ComponentActivity() {
             val settledWorkflows = workflows.filter { it.optString("status") != "running" }.map { "workflow:${it.optString("id")}" }
             pendingReplies.resolve((replies.map { it.optString("taskId") } + finished + settledWorkflows).toSet())
             replyWaitStartedAt = pendingReplies.oldestStartedAt
-            if (foreground && chatAllowed() && replySession == voiceSession && spokenReplies && voice.replyPlaybackAvailable) {
+            if (foreground && chatAllowed() && replySession == voiceSession && voice.replyPlaybackAvailable) {
                 val matching = replies.filter { pendingSpeechTasks[it.optString("taskId")] == voiceSession }
                 val reply = matching.firstOrNull { it.opt("pipelineIntermediate") != true }
                 val workflowReplies = replies.filter { message ->
@@ -338,12 +376,12 @@ open class MainActivity : ComponentActivity() {
                     val id = it.optString("id")
                     val waitingDelivery = replies.any { message -> message.optString("workflowId") == id && message.optString("kind") == "project_delivery" && message.optString("id") !in spokenWorkflowMessages }
                     if (!waitingDelivery && pendingSpeechWorkflows.remove(id) == voiceSession && it.optString("status") != "completed" && workflowReply == null) {
-                        notice = it.optString("error").ifBlank { "The project needs your attention. Review its status before continuing." }
+                        localReply(it.optString("error").ifBlank { "The project needs your attention. Review its status before continuing." }, ReplyMode.VOICE)
                     }
                 }
                 if (reply == null) {
                     val failed = snapshot.objects("tasks").lastOrNull { pendingSpeechTasks[it.optString("id")] == voiceSession && ReplyPolling.unsuccessful(it.optString("status")) }
-                    failed?.let { pendingSpeechTasks.remove(it.optString("id")); notice = it.optString("error").ifBlank { "That task stopped. Tap Talk when you are ready." } }
+                    failed?.let { pendingSpeechTasks.remove(it.optString("id")); localReply(it.optString("error").ifBlank { "That task stopped. Tap Talk when you are ready." }, ReplyMode.VOICE) }
                 }
             }
     }
@@ -352,6 +390,7 @@ open class MainActivity : ComponentActivity() {
         if (!foreground || stateIdentity != saved || !connection.startsWith("Connected")) return
         if (!actionsRefreshMutex.tryLock()) return
         try {
+            if (usageAllowed()) lifecycleScope.launch { InstalledApps.sync(applicationContext, saved) }
             val outcomes = ActionInbox.poll(this, saved, canExecute = { action ->
                 val id = action.optString("id")
                 val shouldConfirm = confirmActions || state.optJSONObject("config")?.optBoolean("confirmOrdinaryActions") == true
@@ -401,10 +440,14 @@ open class MainActivity : ComponentActivity() {
         val saved = identity ?: return false
         if (stateIdentity != saved || !connection.startsWith("Connected")) return false
         val device = state.objects("devices").find { it.optString("id") == saved.deviceId } ?: return false
-        return device.optJSONObject("permissions")?.opt("googleAccess") != false
+        return device.optJSONObject("permissions")?.opt("googleAccess") != false && device.optJSONObject("permissions")?.opt("projectAccess") != false
     }
     private fun usageAllowed(): Boolean = chatAllowed() && state.objects("devices").find { it.optString("id") == identity?.deviceId }?.optJSONObject("permissions")?.opt("projectAccess") != false
     private fun updateWorkflow(workflowId: String, action: String, body: JSONObject) {
+        val dictated = questionDictation
+        val answerByVoice = dictated?.workflowId == workflowId && body.toString().contains(JSONObject.quote(dictated.text))
+        questionDictation = null
+        if (action == "answers") WakeWordService.discardWorkflow?.invoke(workflowId)
         val saved = identity ?: return
         val voiceSession = replySession
         launch {
@@ -415,28 +458,37 @@ open class MainActivity : ComponentActivity() {
             checkRequest(saved, "POST", "/api/project-workflows/$workflowId/$action", body)
             if (identity != saved || !usageAllowed()) return@launch
             if (action == "answers" && foreground && replySession == voiceSession) {
+                pendingSpeechWorkflows.remove(workflowId)
                 pendingReplies.add(listOf("workflow:$workflowId"), SystemClock.elapsedRealtime()); replyWaitStartedAt = pendingReplies.oldestStartedAt
-                if (spokenReplies) pendingSpeechWorkflows[workflowId] = voiceSession
+                if (answerByVoice) pendingSpeechWorkflows[workflowId] = voiceSession
             }
             stateRefreshWake.trySend(Unit)
             refreshSnapshot(saved)
         }
     }
-    private fun sendChat() {
+    private fun sendChat(mode: ReplyMode = ReplyMode.TEXT) {
         val message = draft.trim()
         if (message.isBlank()) return
-        NavigationPolicy.parse(message)?.let { draft = ""; navigate(it); return }
+        LocalClockCommands.parse(message)?.let { command ->
+            draft = ""
+            localMessages += JSONObject().put("id", "local-${System.nanoTime()}").put("role", "user").put("content", message).put("createdAt", Instant.now().toString())
+            val reply = LocalClockActions.execute(this, command)
+            if (reply.openClock) openTools("Clock")
+            localReply(reply.text, mode)
+            return
+        }
+        NavigationPolicy.parse(message)?.let { draft = ""; navigate(it, mode = mode); return }
         val foundation = FoundationPolicy.command(message)
-        if (foundation != null) { draft = ""; handleFoundationCommand(foundation); return }
+        if (foundation != null) { draft = ""; handleFoundationCommand(foundation, mode); return }
         if (busy) { notice = "This request is still being accepted. You can navigate while it finishes."; return }
         val phoneCommand = PhoneCommandParser.parse(message)
         if (phoneCommand != null) {
             draft = ""; tab = "Chat"
             localMessages += JSONObject().put("id", "local-${System.nanoTime()}").put("role", "user").put("content", message).put("createdAt", Instant.now().toString())
-            launch { processPhoneCommand(phoneCommand) }
+            launch { processPhoneCommand(phoneCommand, mode) }
             return
         }
-        val saved = identity ?: run { notice = "Pair your PC before using AI chat. Direct phone tools remain available."; voice.stop(); return }
+        val saved = identity ?: run { voice.stop(); localReply("Pair your PC before using AI chat. Direct phone tools remain available.", mode); return }
         val voiceSession = voice.session
         val deliverySession = replySession
         val navigationTicket = navigationReceipts.begin()
@@ -445,30 +497,35 @@ open class MainActivity : ComponentActivity() {
                 if (team) state.objects("providers").filter { it.optString("id") in listOf("codex", "claude") }.map { it.getString("id") } else emptyList()).put("timeZone", ZoneId.systemDefault().id).put("requestId", java.util.UUID.randomUUID().toString())
             try {
                 if (stateIdentity != saved || !connection.startsWith("Connected")) refreshSnapshot(saved)
-                check(identity == saved && chatAllowed()) { "Connect your PC and enable this device's Google access before using AI chat. Direct phone tools remain available." }
+                check(identity == saved && chatAllowed()) { "Connect your PC and enable this device's Google and project access before using AI chat. Direct phone tools remain available." }
                 val response = checkRequest(saved, "POST", "/api/chat", body)
                 if (identity != saved || !chatAllowed()) return@launch
-                if (foreground && replySession == deliverySession) {
+                if (replySession == deliverySession && (foreground || mode == ReplyMode.VOICE)) {
                     val ids = response.optJSONArray("taskIds")
                     val submitted = if (ids != null) (0 until ids.length()).map { ids.optString(it) }.filter { it.isNotBlank() } else emptyList()
                     pendingReplies.add(submitted, SystemClock.elapsedRealtime()); replyWaitStartedAt = pendingReplies.oldestStartedAt
-                    if (spokenReplies) submitted.forEach { pendingSpeechTasks[it] = deliverySession }
+                    if (mode == ReplyMode.VOICE) submitted.forEach { pendingSpeechTasks[it] = deliverySession }
                     val workflowId = response.optString("workflowId")
                     if (workflowId.isNotBlank() && usageAllowed()) {
                         pendingReplies.add(listOf("workflow:$workflowId"), SystemClock.elapsedRealtime()); replyWaitStartedAt = pendingReplies.oldestStartedAt
-                        if (spokenReplies) pendingSpeechWorkflows[workflowId] = deliverySession
+                        if (mode == ReplyMode.VOICE) pendingSpeechWorkflows[workflowId] = deliverySession
                     }
                 }
                 if (voice.session == voiceSession && draft.trim() == message) draft = ""
                 val immediate = response.optString("reply")
-                if (immediate.isNotBlank() && foreground && voice.session == voiceSession && spokenReplies) voice.speak(immediate)
+                val continued = !foreground && mode == ReplyMode.VOICE && replySession == deliverySession && WakeWordService.continueReplies?.invoke(saved, listOf(response)) == true
+                if (continued) {
+                    response.optJSONArray("taskIds")?.let { ids -> (0 until ids.length()).forEach { pendingSpeechTasks.remove(ids.optString(it)) } }
+                    pendingSpeechWorkflows.remove(response.optString("workflowId"))
+                }
+                if (!continued && immediate.isNotBlank() && voice.session == voiceSession && mode == ReplyMode.VOICE && !getSystemService(android.app.KeyguardManager::class.java).isDeviceLocked) voice.speak(immediate)
                 val outcome = response.optJSONObject("outcome")
                 if (foreground && replySession == deliverySession && outcome?.optString("type") == "navigate") applyNavigationReceipt(outcome, navigationTicket)
                 if (foreground && navigationReceipts.accepts(navigationTicket) && response.optString("intakeId").isNotBlank()) { focusedIntakeId = response.optString("intakeId"); foundationPage = "Project setup"; tab = "Tools" }
                 stateRefreshWake.trySend(Unit)
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) {
-                throw error
+                if (foreground && replySession == deliverySession) localReply(error.message ?: "That request could not finish. Check its status before trying again.", mode)
             }
         }
     }
@@ -476,7 +533,7 @@ open class MainActivity : ComponentActivity() {
         if (voiceQuestionTarget != null || voiceIntakeTarget != null) { voiceLaunch.cancel(); if (::voice.isInitialized) voice.stop() }
         voiceQuestionTarget = null; voiceIntakeTarget = null
     }
-    private fun editDraft(text: String) { navigationReceipts.invalidate(); appSelection = null; cancelQuestionVoice(); draft = text }
+    private fun editDraft(text: String, fromVoice: Boolean = false) { if (!fromVoice) voice.stop(); navigationReceipts.invalidate(); appSelection = null; cancelQuestionVoice(); draft = text }
     private fun acceptVoiceText(text: String) {
         val intakeTarget = voiceIntakeTarget
         if (intakeTarget != null) {
@@ -496,7 +553,7 @@ open class MainActivity : ComponentActivity() {
             } else notice = "That question changed. Review the current questions before answering."
             return
         }
-        editDraft(text); sendChat()
+        editDraft(text, fromVoice = true); sendChat(ReplyMode.VOICE)
     }
     private fun beginQuestionVoice(workflowId: String, questionId: String) {
         if (!foreground || !usageAllowed()) return
@@ -580,12 +637,12 @@ open class MainActivity : ComponentActivity() {
             outcome.optString("selfMaintenanceId").takeIf { BrowserInputPolicy.id(it) }?.let { maintenanceDrafts.focusedId = it }
         }
     }
-    private fun navigate(command: NakamaNavigation, announce: Boolean = true) {
+    private fun navigate(command: NakamaNavigation, announce: Boolean = true, mode: ReplyMode = ReplyMode.TEXT) {
         if (!foreground) return
         when (command) {
             is NakamaNavigation.Page -> {
                 focusedWorkflowId = null; focusedIntakeId = null; voiceQuestionTarget = null; voiceIntakeTarget = null; connectionRequestId = null; checksProjectId = null; githubProjectId = null; filesProjectId = null; browserSessionId = null; importGithub = false; tab = command.tab; command.area?.let { foundationPage = it }
-                if (announce) localReply("Opened ${command.area ?: command.tab}.")
+                if (announce) localReply("Opened ${command.area ?: command.tab}.", mode)
             }
             is NakamaNavigation.App -> {
                 val ticket = navigationReceipts.begin()
@@ -597,9 +654,9 @@ open class MainActivity : ComponentActivity() {
                 }
                 if (!foreground || !navigationReceipts.accepts(ticket)) return@launch
                 when (matches.size) {
-                    0 -> localReply("No visible launchable app matches '${command.label}'. Use its exact installed name or say 'open app' followed by its Android package name.")
-                    1 -> performLocalCommand(PhoneCommandParser.OpenApp(matches.single().second, matches.single().first), "")
-                    else -> { appSelectionTicket = ticket; appSelection = matches }
+                    0 -> localReply("No visible launchable app matches '${command.label}'. Choose its installed name in Device settings.", mode)
+                    1 -> performLocalCommand(PhoneCommandParser.OpenApp(matches.single().second, matches.single().first), "", mode)
+                    else -> { appSelectionTicket = ticket; appSelectionMode = mode; appSelection = matches }
                 }
                 }
             }
@@ -607,29 +664,30 @@ open class MainActivity : ComponentActivity() {
                 when (command.action) {
                     "home", "settings" -> runCatching {
                         startActivity(if (command.action == "home") Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME) else Intent(Settings.ACTION_SETTINGS))
-                        notice = "Android ${command.action} opened."
-                    }.onFailure { localReply("Android could not open ${command.action}.") }
-                    else -> localReply(NakamaAccessibilityService.navigateFromUser(command.action, NakamaAccessibilityService.sessionToken).message)
+                        localReply("Android ${command.action} opened.", mode)
+                    }.onFailure { localReply("Android could not open ${command.action}.", mode) }
+                    else -> localReply(NakamaAccessibilityService.navigateFromUser(command.action, NakamaAccessibilityService.sessionToken).message, mode)
                 }
             }
         }
     }
     private fun openTools(page: String) { checksProjectId = null; foundationPage = page; tab = "Tools" }
-    private fun handleFoundationCommand(command: FoundationCommand) {
+    private fun handleFoundationCommand(command: FoundationCommand, mode: ReplyMode) {
         when (command) {
-            is FoundationCommand.Open -> openTools(command.page)
+            is FoundationCommand.Open -> { openTools(command.page); localReply("Opened ${command.page}.", mode) }
             is FoundationCommand.Monitor -> { openTools("Remote PC"); remoteVoiceCommand = System.nanoTime() to "monitor:${command.selection}" }
             is FoundationCommand.PcInput -> { openTools("Remote PC"); remoteVoiceCommand = System.nanoTime() to "input:${JSONObject().put("kind", command.kind).put("value", command.value)}" }
             FoundationCommand.ConnectRemote -> { openTools("Remote PC"); remoteVoiceCommand = System.nanoTime() to "connect" }
             FoundationCommand.StopRemote -> { openTools("Remote PC"); remoteVoiceCommand = System.nanoTime() to "stop" }
-            FoundationCommand.StartLocation -> { openTools("Location"); foundationAction("start_location") }
-            FoundationCommand.StopLocation -> { openTools("Location"); foundationAction("stop_location") }
-            FoundationCommand.RefreshLocation -> { openTools("Location"); foundationAction("update_location") }
-            FoundationCommand.StartWake -> { openTools("Wake word"); foundationAction("start_wake") }
-            FoundationCommand.StopWake -> { openTools("Wake word"); foundationAction("stop_wake") }
-            FoundationCommand.SyncAlarms -> { openTools("Routines"); foundationAction("sync_alarms") }
-            FoundationCommand.SilenceAlarms -> foundationAction("silence_alarms")
+            FoundationCommand.StartLocation -> { openTools("Location"); foundationAction("start_location", mode = mode) }
+            FoundationCommand.StopLocation -> { openTools("Location"); foundationAction("stop_location", mode = mode) }
+            FoundationCommand.RefreshLocation -> { openTools("Location"); foundationAction("update_location", mode = mode) }
+            FoundationCommand.StartWake -> { openTools("Wake word"); foundationAction("start_wake", mode = mode) }
+            FoundationCommand.StopWake -> { openTools("Wake word"); foundationAction("stop_wake", mode = mode) }
+            FoundationCommand.SyncAlarms -> { openTools("Routines"); foundationAction("sync_alarms", mode = mode) }
+            FoundationCommand.SilenceAlarms -> foundationAction("silence_alarms", mode = mode)
         }
+        if (command is FoundationCommand.Monitor || command is FoundationCommand.PcInput || command == FoundationCommand.ConnectRemote || command == FoundationCommand.StopRemote) localReply("Opened remote controls for your request. Check the connection and action result there.", mode)
     }
     private suspend fun syncPhoneAlarms(saved: HostIdentity, routines: List<JSONObject>) {
         check(identity == saved && usageAllowed()) { "Reconnect and enable project and Google access first." }
@@ -640,25 +698,38 @@ open class MainActivity : ComponentActivity() {
             checkRequest(saved, "POST", "/api/routines/$id/device-status", receipt)
         }
     }
-    private fun foundationAction(action: String, requestPermissions: Boolean = true) {
+    private fun foundationAction(action: String, requestPermissions: Boolean = true, mode: ReplyMode = ReplyMode.TEXT) {
         fun missing(permission: String) = ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
         when (action) {
-            "start_wake" -> {
+            "timer_notifications" -> permissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+            "timer_alarm_permission" -> startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
+            "timer_alert_settings" -> {
+                LocalTimers.prepareNotifications(this)
+                startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName).putExtra(Settings.EXTRA_CHANNEL_ID, LocalTimers.ALERT_CHANNEL))
+            }
+            "start_wake", "restart_wake" -> {
                 if (!foreground) { notice = "Open Nakama to enable wake listening."; return }
                 if (missing(Manifest.permission.RECORD_AUDIO) || missing(Manifest.permission.POST_NOTIFICATIONS)) {
-                    if (requestPermissions) { foundationPermissionAction = action; foundationPermissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)) }
+                    if (requestPermissions) { foundationPermissionAction = action; foundationPermissionMode = mode; foundationPermissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)) }
                     else notice = "Microphone and notification permissions are needed for visible wake listening."
                     return
                 }
-                voice.stop(); runCatching { ContextCompat.startForegroundService(this, Intent(this, WakeWordService::class.java)) }.onFailure { notice = "Android could not start wake listening: ${it.message}" }
+                preference("wakeEnabled", true)
+                voice.stop(); runCatching { ContextCompat.startForegroundService(this, Intent(this, WakeWordService::class.java).setAction(if (action == "restart_wake") "RESTART" else "START")) }.onSuccess { localReply("Wake listening requested. The listening notification confirms when it is active.", mode) }.onFailure { localReply("Android could not start wake listening: ${it.message}", mode) }
             }
-            "stop_wake" -> { stopService(Intent(this, WakeWordService::class.java)); notice = "Wake listening stopped." }
+            "download_wake_model" -> { voice.stop(); stopService(Intent(this, WakeWordService::class.java)); LocalSpeechSetup.downloadEnglish(this) }
+            "wake_input_settings" -> {
+                voice.stop()
+                runCatching { startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }
+                    .onFailure { notice = "Open Android Settings and search for Voice input or On-device recognition. Install offline English, then restart wake listening." }
+            }
+            "stop_wake" -> { preference("wakeEnabled", false); stopService(Intent(this, WakeWordService::class.java)); localReply("Wake listening stopped.", mode) }
             "location_permissions" -> { foundationPermissionAction = null; foundationPermissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)) }
             "background_location" -> { notice = "In Android permissions, choose Location. 'Allow all the time' is optional and must be granted there after foreground location access."; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
             "start_location" -> {
                 if (!foreground || !usageAllowed()) { notice = "Open Nakama, connect the PC and enable Google/project access before sharing this phone's location."; return }
                 if ((missing(Manifest.permission.ACCESS_FINE_LOCATION) && missing(Manifest.permission.ACCESS_COARSE_LOCATION)) || missing(Manifest.permission.POST_NOTIFICATIONS)) {
-                    if (requestPermissions) { foundationPermissionAction = action; foundationPermissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)) }
+                    if (requestPermissions) { foundationPermissionAction = action; foundationPermissionMode = mode; foundationPermissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)) }
                     else notice = "Location and notification permissions are needed. Approximate access shares the accuracy Android reports."
                     return
                 }
@@ -675,32 +746,34 @@ open class MainActivity : ComponentActivity() {
             "sync_alarms" -> {
                 val saved = identity ?: return
                 if (!usageAllowed()) { notice = "Connect and enable Google/project access to sync alarms."; return }
-                if (missing(Manifest.permission.POST_NOTIFICATIONS) && requestPermissions) { foundationPermissionAction = action; foundationPermissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS)); return }
+                if (missing(Manifest.permission.POST_NOTIFICATIONS) && requestPermissions) { foundationPermissionAction = action; foundationPermissionMode = mode; foundationPermissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS)); return }
                 PhoneAlarmScheduler.enable(this, saved.deviceId)
-                launch { syncPhoneAlarms(saved, state.optJSONObject("routineBoard")?.objects("routines").orEmpty()); refreshSnapshot(saved); notice = "Phone alarm sync finished. Check each routine's scheduling receipt." }
+                launch { syncPhoneAlarms(saved, state.optJSONObject("routineBoard")?.objects("routines").orEmpty()); refreshSnapshot(saved); localReply("Phone alarm sync finished. Check each routine's scheduling receipt; permission failures mean its alarm is not scheduled.", mode) }
             }
             "alarm_permission" -> startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
-            "silence_alarms" -> { PhoneAlarmScheduler.silence(this); notice = "Current Nakama alarm notifications silenced. Future scheduled alarms remain enabled." }
+            "silence_alarms" -> { PhoneAlarmScheduler.silence(this); localReply("Current Nakama alarm notifications silenced. Future scheduled alarms remain enabled.", mode) }
         }
     }
-    private fun localReply(message: String) {
+    private fun localReply(message: String, mode: ReplyMode = ReplyMode.TEXT) {
         localMessages += JSONObject().put("id", "local-${System.nanoTime()}").put("role", "assistant").put("content", message).put("createdAt", Instant.now().toString())
         notice = message
-        if (spokenReplies && foreground) voice.speak(message)
+        if (mode == ReplyMode.VOICE && foreground) voice.speak(message)
     }
-    private suspend fun processPhoneCommand(command: PhoneCommandParser.Command) {
-        if (command is PhoneCommandParser.Unsupported) { localReply(command.explanation); return }
-        if (command is PhoneCommandParser.OpenApp) { performLocalCommand(command, ""); return }
+    private suspend fun processPhoneCommand(command: PhoneCommandParser.Command, mode: ReplyMode) {
+        val requestSession = voice.session
+        if (command is PhoneCommandParser.Unsupported) { localReply(command.explanation, mode); return }
+        if (command is PhoneCommandParser.OpenApp) { performLocalCommand(command, "", mode); return }
         val target = when (command) { is PhoneCommandParser.Call -> command.target; is PhoneCommandParser.Message -> command.target; else -> return }
-        if (PhoneCommandParser.isPhoneNumber(target)) { performLocalCommand(command, target); return }
+        if (PhoneCommandParser.isPhoneNumber(target)) { performLocalCommand(command, target, mode); return }
         val contacts = try { withContext(Dispatchers.IO) { PhoneActions(this@MainActivity).findContacts(target) } }
-            catch (error: Exception) { localReply(error.message ?: "Could not look up that contact."); return }
-        if (contacts.isEmpty()) { localReply("I couldn't find '$target' in your contacts. Use a more specific name or an explicit phone number."); return }
+            catch (error: Exception) { if (foreground && voice.session == requestSession) localReply(error.message ?: "Could not look up that contact.", mode); return }
+        if (!foreground || voice.session != requestSession) return
+        if (contacts.isEmpty()) { localReply("I couldn't find '$target' in your contacts. Use a more specific name or an explicit phone number.", mode); return }
         val exact = contacts.filter { it.name.equals(target, true) }
-        if (exact.size == 1) performLocalCommand(command, exact.single().number)
-        else contactSelection = command to if (exact.isNotEmpty()) exact else contacts
+        if (exact.size == 1) performLocalCommand(command, exact.single().number, mode)
+        else { contactSelectionMode = mode; contactSelection = command to if (exact.isNotEmpty()) exact else contacts }
     }
-    private fun performLocalCommand(command: PhoneCommandParser.Command, number: String) {
+    private fun performLocalCommand(command: PhoneCommandParser.Command, number: String, mode: ReplyMode = ReplyMode.TEXT) {
         val args = JSONObject()
         val type = when (command) {
             is PhoneCommandParser.Call -> { args.put("number", number).put("direct", true); "call" }
@@ -708,8 +781,8 @@ open class MainActivity : ComponentActivity() {
             is PhoneCommandParser.OpenApp -> { args.put("packageName", command.packageName); "open_app" }
             else -> return
         }
-        val action = JSONObject().put("id", "local-${System.nanoTime()}").put("type", type).put("args", args)
-        if (confirmActions) pendingAction = action else localReply(PhoneActions(this).execute(action).message)
+        val action = JSONObject().put("id", "local-${System.nanoTime()}").put("type", type).put("args", args).put("localVoice", mode == ReplyMode.VOICE)
+        if (confirmActions) pendingAction = action else localReply(PhoneActions(this).execute(action).message, mode)
     }
     private fun startVoice(continuous: Boolean) {
         if (!foreground) return
@@ -717,9 +790,10 @@ open class MainActivity : ComponentActivity() {
         tab = "Chat"; handsFreeAfterPermission = continuous
         voiceLaunch.request(); resumeVoiceLaunch()
     }
-    private fun stopConversation() { voiceQuestionTarget = null; voiceIntakeTarget = null; voiceLaunch.cancel(); clearPendingReplies(); voice.stop() }
+    private fun stopConversation() { WakeWordService.stopReply?.invoke(); contactSelectionMode = ReplyMode.TEXT; appSelectionMode = ReplyMode.TEXT; pendingAction?.remove("localVoice"); voiceQuestionTarget = null; voiceIntakeTarget = null; voiceLaunch.cancel(); clearPendingReplies(); voice.stop() }
     private fun resumeVoiceLaunch() {
         if (!voiceLaunch.take(foreground)) return
+        WakeWordService.stopReply?.invoke()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.listen(handsFreeAfterPermission)
         else { voiceLaunch.awaitingPermission(); microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
     }
@@ -777,7 +851,7 @@ open class MainActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                             AndroidView(factory = { MoteView(it) }, modifier = Modifier.size(48.dp))
                             Column(Modifier.weight(1f).padding(start = 10.dp)) { Text("Nakama", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(connection, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            TextButton(onClick = { launch { refresh() } }, enabled = identity != null && !busy) { Text("Refresh") }
+                            TextButton(onClick = { launch(showWork = false) { refresh() } }, enabled = identity != null && !busy) { Text("Refresh") }
                             if (tab != "Chat") TextButton(onClick = { handsFreeAfterPermission = false; voiceLaunch.request(); resumeVoiceLaunch() }) { Text("Talk") }
                         }
                         if (busy) NakamaBusy(Modifier.fillMaxWidth())
@@ -793,19 +867,19 @@ open class MainActivity : ComponentActivity() {
             pendingAction?.let { action ->
                 AlertDialog(onDismissRequest = { }, title = { Text("Allow this phone action?") },
                     text = { Text("${action.optString("type")}\n\n${action.optJSONObject("args")?.toString(2) ?: ""}") },
-                    confirmButton = { TextButton(onClick = { pendingAction = null; if (action.getString("id").startsWith("local-")) localReply(PhoneActions(this@MainActivity).execute(action).message) else { acceptedActions += action.getString("id"); launch { refresh() } } }) { Text("Allow once") } },
-                    dismissButton = { TextButton(onClick = { pendingAction = null; if (action.getString("id").startsWith("local-")) localReply("Phone action cancelled. Nothing was sent or called.") else { declinedActions += action.getString("id"); launch { refresh() } } }) { Text("Decline") } })
+                    confirmButton = { TextButton(onClick = { pendingAction = null; if (action.getString("id").startsWith("local-")) localReply(PhoneActions(this@MainActivity).execute(action).message, if (action.optBoolean("localVoice")) ReplyMode.VOICE else ReplyMode.TEXT) else { acceptedActions += action.getString("id"); launch(showWork = false) { refresh() } } }) { Text("Allow once") } },
+                    dismissButton = { TextButton(onClick = { pendingAction = null; if (action.getString("id").startsWith("local-")) localReply("Phone action cancelled. Nothing was sent or called.", if (action.optBoolean("localVoice")) ReplyMode.VOICE else ReplyMode.TEXT) else { declinedActions += action.getString("id"); launch(showWork = false) { refresh() } } }) { Text("Decline") } })
             }
             contactSelection?.let { (command, matches) ->
                 AlertDialog(onDismissRequest = { contactSelection = null }, title = { Text("Choose the recipient") }, text = {
                     LazyColumn { item { Text("Select the exact contact and number. Nakama won't guess.", Modifier.padding(bottom = 12.dp)) }; items(matches) { person ->
-                        TextButton(onClick = { contactSelection = null; performLocalCommand(command, person.number) }) { Column(Modifier.fillMaxWidth()) { Text(person.name, fontWeight = FontWeight.Bold); Text(person.number, style = MaterialTheme.typography.bodySmall) } }
+                        TextButton(onClick = { contactSelection = null; performLocalCommand(command, person.number, contactSelectionMode) }) { Column(Modifier.fillMaxWidth()) { Text(person.name, fontWeight = FontWeight.Bold); Text(person.number, style = MaterialTheme.typography.bodySmall) } }
                     } }
-                }, confirmButton = { TextButton(onClick = { contactSelection = null; localReply("Recipient selection cancelled.") }) { Text("Cancel") } })
+                }, confirmButton = { TextButton(onClick = { contactSelection = null; localReply("Recipient selection cancelled.", contactSelectionMode) }) { Text("Cancel") } })
             }
             appSelection?.let { matches ->
                 AlertDialog(onDismissRequest = { appSelection = null }, title = { Text("Choose the exact app") }, text = {
-                    Column(Modifier.verticalScroll(rememberScrollState())) { matches.forEach { (label, pkg) -> TextButton(onClick = { appSelection = null; if (foreground && navigationReceipts.accepts(appSelectionTicket)) performLocalCommand(PhoneCommandParser.OpenApp(pkg, label), "") }) { Text("$label\n$pkg") } } }
+                    Column(Modifier.verticalScroll(rememberScrollState())) { matches.forEach { (label, pkg) -> TextButton(onClick = { appSelection = null; if (foreground && navigationReceipts.accepts(appSelectionTicket)) performLocalCommand(PhoneCommandParser.OpenApp(pkg, label), "", appSelectionMode) }) { Text("$label\n$pkg") } } }
                 }, confirmButton = { TextButton(onClick = { appSelection = null }) { Text("Cancel") } })
             }
           }
@@ -970,7 +1044,7 @@ open class MainActivity : ComponentActivity() {
             LazyColumn(Modifier.weight(1f), state = chatList, verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
                 if (focusedWorkflowId != null) item { TextButton(onClick = { focusedWorkflowId = null }) { Text("Show full project conversation") } }
                 if (messages.isEmpty()) item { InfoCard("What shall we do?", "Just type or tap Talk. Nakama follows your saved AI roles and accepts named overrides such as 'plan using Claude'. Use Video studio on your PC for Kling video requests; generation always needs your approval.") }
-                if (!chatAllowed()) item { InfoCard("AI chat needs your PC", "Connect your PC and allow Google access for this device. Direct phone commands can still work locally.") }
+                if (!chatAllowed()) item { InfoCard("AI chat needs your PC", "Connect your PC and allow Google and project access for this device. Direct phone commands can still work locally.") }
                 items(workflows, key = { "workflow-${it.optString("id")}" }) { workflow ->
                     val workflowId = workflow.optString("id")
                     ProjectWorkflowPanel(workflow, usageAllowed(), busy, onAnswers = { answers ->
@@ -1003,15 +1077,15 @@ open class MainActivity : ComponentActivity() {
                 TextButton(onClick = { startVoice(true) }) { Text("Talk") }
                 TextButton(onClick = { stopConversation() }) { Text("Stop") }
                 Spacer(Modifier.weight(1f))
-                Button(onClick = { sendChat() }, enabled = draft.isNotBlank() && (!busy || NavigationPolicy.parse(draft) != null || FoundationPolicy.command(draft) != null)) { Text("Send") }
+                Button(onClick = { sendChat() }, enabled = draft.isNotBlank() && (!busy || LocalClockCommands.parse(draft) != null || NavigationPolicy.parse(draft) != null || FoundationPolicy.command(draft) != null)) { Text("Send") }
             }
-            Text(voiceState + " · Your requested work can reply while Nakama stays open. Stop or background the app to end spoken follow-up.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+            Text(voiceState + " · Voice requests receive spoken replies; typed requests stay text only. Enable Wake word in Tools to ask while Nakama is in the background.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
         }
     }
 
     @Composable private fun DeviceScreen() {
         var payload by remember { mutableStateOf("") }; var deviceName by remember { mutableStateOf("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}") }
-        var packageName by remember { mutableStateOf("com.whatsapp") }; var number by remember { mutableStateOf("") }; var message by remember { mutableStateOf("") }; var contact by remember { mutableStateOf("") }
+        var packageName by remember { mutableStateOf("") }; var number by remember { mutableStateOf("") }; var message by remember { mutableStateOf("") }; var contact by remember { mutableStateOf("") }
         var actionType by remember { mutableStateOf("Call") }; var showUnpair by remember { mutableStateOf(false) }
         var eventTitle by remember { mutableStateOf("") }; var eventStart by remember { mutableStateOf("") }; var eventEnd by remember { mutableStateOf("") }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
@@ -1029,7 +1103,7 @@ open class MainActivity : ComponentActivity() {
             item { OutlinedButton(onClick = { stopConversation(); tab = "Usage" }) { Text("View AI usage") } }
             item { SectionTitle("Make it yours", "Voice, appearance and everyday permissions.") }
             item { Choice("Appearance", themeChoice, listOf("System", "Light", "Dark"), Modifier.fillMaxWidth()) { themeChoice = it; getSharedPreferences("nakama_preferences", MODE_PRIVATE).edit().putString("theme", it).apply() } }
-            item { ToggleRow("Read replies aloud", "Uses your Android speech engine and installed voices.", spokenReplies) { spokenReplies = it; preference("spokenReplies", it); if (!it) voice.stop() } }
+            item { InfoCard("Replies follow your input", "Voice requests receive spoken replies using your installed offline voice. Typed requests receive text only. Stop voice ends spoken follow-up.") }
             item { ToggleRow("Reduce motion", "Keep page changes and Mote still. Android's animation setting also applies.", reduceMotion) { reduceMotion = it; preference("reduceMotion", it) } }
             item { ToggleRow("Project question and login alerts", "Generic notifications while Nakama is open or Mote is visibly running. Android/background limits apply; no always-on delivery guarantee.", projectAlertsEnabled) { enabled ->
                 val saved = identity
@@ -1055,13 +1129,14 @@ open class MainActivity : ComponentActivity() {
             if (actionType in listOf("Call", "SMS draft", "WhatsApp draft")) item { OutlinedTextField(number, { number = it }, Modifier.fillMaxWidth(), label = { Text("Phone number, including country code") }, singleLine = true) }
             if (actionType in listOf("SMS draft", "WhatsApp draft")) item { OutlinedTextField(message, { message = it }, Modifier.fillMaxWidth(), label = { Text("Your exact message") }, minLines = 2) }
             if (actionType == "Find contact") item { OutlinedTextField(contact, { contact = it }, Modifier.fillMaxWidth(), label = { Text("Contact name") }) }
-            if (actionType == "Open app") item { OutlinedTextField(packageName, { packageName = it }, Modifier.fillMaxWidth(), label = { Text("App package, e.g. com.discord") }) }
+            if (actionType == "Open app") item { InstalledAppPicker("Installed app", packageName, onSelected = { packageName = it }) }
             if (actionType == "Calendar draft") {
                 item { OutlinedTextField(eventTitle, { eventTitle = it }, Modifier.fillMaxWidth(), label = { Text("Event title") }) }
                 item { OutlinedTextField(eventStart, { eventStart = it }, Modifier.fillMaxWidth(), label = { Text("Start, e.g. 2026-09-30T14:00:00+01:00") }) }
                 item { OutlinedTextField(eventEnd, { eventEnd = it }, Modifier.fillMaxWidth(), label = { Text("End, including timezone offset") }) }
             }
             item { Button(onClick = {
+                if (actionType == "Open app" && !InstalledApps.contains(this@MainActivity, packageName)) { notice = "Choose an installed app first."; return@Button }
                 val args = JSONObject()
                 val type = when (actionType) {
                     "Call" -> { args.put("number", number).put("direct", true); "call" }
@@ -1074,18 +1149,19 @@ open class MainActivity : ComponentActivity() {
                 notice = PhoneActions(this@MainActivity).execute(JSONObject().put("type", type).put("args", args)).message
             }, modifier = Modifier.fillMaxWidth()) { Text("${if (actionType == "Call") "Place call" else "Continue"} on this device") } }
             item { SectionTitle("Visible phone control", "Blue edges show an active session. A blue cursor marks the requested tap, typing field or scroll area.") }
-            item { Text("Enable Accessibility in Android, allow notifications, then start the mascot and name the target app below. Control lasts two minutes, with a floating STOP button. Say Android Back, show recent apps or show phone notifications during the session for explicit navigation only. Explicit screen reads share bounded visible labels with your PC; editable values and sensitive screens are excluded. Deployment and project-deletion controls require you. Screen video, unrestricted phone access and autonomous app navigation are not implemented.", style = MaterialTheme.typography.bodySmall) }
-            item { InfoCard(if (NakamaAccessibilityService.activePackage.isBlank()) "Phone control is off" else "${NakamaAccessibilityService.remainingSeconds}s remaining · ${NakamaAccessibilityService.activePackage}", if (NakamaAccessibilityService.activePackage.isBlank()) "Accessibility ${if (NakamaAccessibilityService.connected) "connected" else "off"} · Mascot ${if (MascotOverlayService.running) "running" else "off"}. Each session needs your tap on this phone." else NakamaAccessibilityService.lastAction) }
+            item { Text("Enable Accessibility in Android, allow notifications, then start the mascot and choose the target app below. Control lasts two minutes, with a floating STOP button. Say Android Back, show recent apps or show phone notifications during the session for explicit navigation only. Explicit screen reads share bounded visible labels with your PC; editable values and sensitive screens are excluded. Deployment and project-deletion controls require you. Screen video, unrestricted phone access and autonomous app navigation are not implemented.", style = MaterialTheme.typography.bodySmall) }
+            item { InfoCard(if (NakamaAccessibilityService.activePackage.isBlank()) "Phone control is off" else "${NakamaAccessibilityService.remainingSeconds}s remaining · ${InstalledApps.label(this@MainActivity, NakamaAccessibilityService.activePackage)}", if (NakamaAccessibilityService.activePackage.isBlank()) "Accessibility ${if (NakamaAccessibilityService.connected) "connected" else "off"} · Mascot ${if (MascotOverlayService.running) "running" else "off"}. Each session needs your tap on this phone." else NakamaAccessibilityService.lastAction) }
             item { OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text("Open accessibility settings") } }
-            item { OutlinedTextField(packageName, { packageName = it }, Modifier.fillMaxWidth(), label = { Text("Allow control of this app package") }, singleLine = true) }
+            item { InstalledAppPicker("Allow control of this installed app", packageName, controlOnly = true, onSelected = { packageName = it }) }
             item { Button(onClick = {
-                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notice = "Enable notifications first so you always have a visible Stop control."
+                if (!InstalledApps.contains(this@MainActivity, packageName) || !MonitorPolicy.packageAllowed(packageName)) notice = "Choose an eligible installed app first."
+                else if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notice = "Enable notifications first so you always have a visible Stop control."
                 else if (!Settings.canDrawOverlays(this@MainActivity)) notice = "Start the mascot first so it can receive scoped actions while another app is open."
                 else if (!MascotOverlayService.running) { startMascot(); notice = "Mote is starting. Tap Enable control again once the mascot is visible." }
                 else notice = runCatching { NakamaAccessibilityService.startSession(packageName.trim()).message }.getOrElse { it.message ?: "Could not start control." }
             }) { Text("Enable control for 2 minutes") } }
             item { TextButton(onClick = { NakamaAccessibilityService.stopSession(); notice = "All accessibility actions stopped." }) { Text("Stop phone control now") } }
-            item { InfoCard("Your privacy", "Pairing keys stay in Android Keystore. Chat is stored on your PC. Requested contacts, action outcomes and bounded app labels from explicit screen reads go to Control Center. Your phone screen is not streamed. Tools has separate opt-in controls and visible Stop notifications for local wake listening and sharing this phone's location.") }
+            item { InfoCard("Your privacy", "Pairing keys stay in Android Keystore. Chat is stored on your PC. While connected with shared access, launchable app names are shared with your paired PC for its app picker. This does not enable control. Requested contacts, action outcomes and bounded app labels from explicit screen reads go to Control Center. Your phone screen is not streamed. Tools has separate opt-in controls and visible Stop notifications for local wake listening and sharing this phone's location.") }
         }
         if (showUnpair) AlertDialog(onDismissRequest = { showUnpair = false }, title = { Text("Forget this PC?") }, text = { Text("This removes the token from this device. To revoke the token on your PC too, remove this device in Control Center.") }, confirmButton = { TextButton(onClick = { vault.clear(); identity = null; clearHostContent(); connection = "Not paired"; NakamaAccessibilityService.stopSession(); stopService(Intent(this@MainActivity, MascotOverlayService::class.java)); showUnpair = false }) { Text("Forget PC") } }, dismissButton = { TextButton(onClick = { showUnpair = false }) { Text("Cancel") } })
     }

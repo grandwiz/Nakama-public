@@ -92,7 +92,9 @@ Open **Learned skills** on Windows or **Tools → Learned skills** on Android to
 
 In Android **Device → Make it yours**, use **Reduce motion** if you prefer still pages and mascot. Android's animation settings also apply. Check the feel on each physical device; a successful emulator test is not a frame-rate guarantee.
 
-For voice, tap **Talk** first and grant microphone permission. Set up the home-screen widget or **Home → Enable floating mascot** for quick entry. The optional wake listener is a visible local-recognition service; verify support on each device before relying on it.
+For voice, tap **Talk** first and grant microphone permission. Voice requests are answered aloud; typed requests stay silent. Set up the home-screen widget or **Home → Enable floating mascot** for quick entry. To use “Nakama” or “Hey Nakama”, follow the [Android wake-word setup steps](android-guide.md#optional-local-nakama-wake-word) on each device. Granting permissions alone does not start listening; check the actual status in **Tools → Wake word**.
+
+Open **Clock** on Windows or **Tools → Clock** on Android to create, pause, resume or cancel a countdown. Android timers run on the phone/tablet; Windows timers require the PC host to stay running and awake. Ask “what time is it?” or “set a 10 minute timer” for a local response without an AI call. See [timer permissions and delivery limits](clock.md).
 
 Enable additional device features one at a time:
 

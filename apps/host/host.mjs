@@ -57,6 +57,8 @@ import { ProjectReports, readProjectPreview } from "./project-reports.mjs";
 import { CheckRepairs } from "./check-repair.mjs";
 import { PersonalBoards } from "./personal-boards.mjs";
 import { DeviceLocations } from "./device-location.mjs";
+import { InstalledApps } from "./installed-apps.mjs";
+import { ClockTimers } from "./clock-timers.mjs";
 import { LocalAssistant } from "./local-assistant.mjs";
 import {
   LearnedSkills,
@@ -238,6 +240,9 @@ export class NakamaHost {
     this.skills = new LearnedSkills(this.store);
     this.boards = new PersonalBoards(this, { clock: this.boardClock });
     this.locations = new DeviceLocations(this);
+    this.installedApps = new InstalledApps(this);
+    this.clockTimers = new ClockTimers(this, { clock: this.boardClock });
+    await this.clockTimers.tick();
     this.localAssistant = new LocalAssistant(this);
     this.remoteDesktop = new RemoteDesktop(this, {
       adapter: this.remoteDesktopAdapter,
@@ -530,6 +535,13 @@ export class NakamaHost {
           "Project and connected-service access is disabled for this device.",
         );
     }
+    if (route === "/api/clock" || route.startsWith("/api/clock/"))
+      return this.clockTimers.route(method, route, body, principal);
+    if (route === "/api/device/apps" && method === "POST")
+      return this.installedApps.publish(body, principal);
+    const appCatalogRoute = route.match(/^\/api\/devices\/([^/]+)\/apps$/);
+    if (appCatalogRoute && method === "GET")
+      return this.installedApps.list(appCatalogRoute[1], principal);
     if (route === "/api/network-status" && method === "GET") {
       requireOwner(principal);
       return networkStatus({
@@ -565,6 +577,7 @@ export class NakamaHost {
           409,
           "This attention request ended or is no longer available.",
         );
+      if (notice.timerId) return { outcome: { type: "navigate", target: "clock" } };
       if (notice.monitorId) {
         const monitor = this.monitoring
           .list(principal)
@@ -815,6 +828,7 @@ export class NakamaHost {
       data.deviceLocations = this.locations.public(principal);
       data.taskBoard = this.boards.taskState(principal);
       data.routineBoard = this.boards.routineState(principal);
+      data.clock = this.clockTimers.public(principal);
       if (principal.kind === "device")
         data.messages = data.messages.filter(
           (message) =>
@@ -1456,6 +1470,8 @@ export class NakamaHost {
       if (body.projectAccess === false || body.googleAccess === false)
         this.stopDeviceRuns(device.id);
       if (body.projectAccess === false || body.googleAccess === false)
+        this.installedApps.forget(device.id);
+      if (body.projectAccess === false || body.googleAccess === false)
         await this.locations.revoke(device.id);
       return result;
     }
@@ -1475,6 +1491,7 @@ export class NakamaHost {
         this.store.audit(s, "device.revoked", principal, match[1]);
         return { revoked: true };
       });
+      this.installedApps.forget(match[1]);
       this.stopDeviceRuns(match[1]);
       await this.locations.revoke(match[1]);
       return result;
@@ -3443,6 +3460,7 @@ export class NakamaHost {
     // from being stopped. Report persistence failures after all cleanup.
     for (const resource of [
       this.boards,
+      this.clockTimers,
       this.remoteDesktop,
       this.projectPreviews,
       this.projectDeliveries,

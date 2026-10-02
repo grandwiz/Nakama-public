@@ -1,3 +1,4 @@
+import { parseClockCommand, localClockReply } from "./local-clock.mjs";
 import { ApiError, now, uid } from "./security.mjs";
 import { assertPersonalAccess } from "./personal-access.mjs";
 import { hostTimeZone } from "./personal-boards.mjs";
@@ -64,12 +65,15 @@ export class LocalAssistant {
     const tasks = () => this.host.boards.taskState(principal).items;
     const routines = () => this.host.boards.routineState(principal).routines;
     try {
+      const clockReply = await localClockReply(this.host, parseClockCommand(input), body, principal);
       const navigation = navigationRequest(
         input,
         this.host.store.state,
         body.projectId,
       );
-      if (navigation) {
+      if (clockReply) {
+        ({ reply, outcome } = clockReply);
+      } else if (navigation) {
         access();
         outcome = navigation;
         reply = `Navigation requested: ${navigation.target.replaceAll("-", " ")}.`;
@@ -667,6 +671,9 @@ export class LocalAssistant {
     const messageId = uid();
     await this.host.store.change((state) => {
       access();
+      const clockRequest = parseClockCommand(input);
+      const clockSensitive = Boolean(clockRequest && !["greeting", "thanks"].includes(clockRequest.type));
+      const scoped = clockSensitive ? (principal.kind === "device" ? { visibleToDeviceId: principal.id } : { ownerOnly: true }) : {};
       const locationSensitive = [
         "location_read",
         "weather_lookup",
@@ -676,6 +683,7 @@ export class LocalAssistant {
         {
           id: uid(),
           role: "user",
+          ...scoped,
           projectId: body.projectId || null,
           content: skillTeaching
             ? "Explicit skill teaching request. Saved steps are inspectable in the Skills library; teaching content is not copied into chat history."
@@ -685,6 +693,7 @@ export class LocalAssistant {
         {
           id: messageId,
           role: "assistant",
+          ...scoped,
           providerId: state.config.interactionRole.providerId,
           projectId: body.projectId || null,
           kind: locationSensitive ? "location_result" : "local_result",

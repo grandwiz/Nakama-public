@@ -13,6 +13,21 @@ data class InstalledVoice(val name: String, val language: String, val country: S
 data class VoicePreferences(val engine: String = "", val voice: String = "", val rate: Float = 1f, val allowSystemRecognition: Boolean = false)
 
 object VoicePolicy {
+    /** Bound each TTS utterance without cutting off ordinary recipes or multi-step answers. */
+    fun speechChunks(text: String): List<String> {
+        val plain = text.replace(Regex("```[\\s\\S]*?```"), " Code is available in the conversation. ").replace(Regex("[*#`]"), "").trim()
+        if (plain.isBlank()) return emptyList()
+        val bounded = if (plain.length > 24_000) plain.take(24_000) + " The remaining text is available in your conversation." else plain
+        val chunks = mutableListOf<String>()
+        var remaining = bounded
+        while (remaining.length > 3_000) {
+            val boundary = remaining.lastIndexOf(' ', 3_000).takeIf { it >= 1_500 } ?: 3_000
+            chunks += remaining.take(boundary).trim()
+            remaining = remaining.substring(boundary).trimStart()
+        }
+        if (remaining.isNotBlank()) chunks += remaining
+        return chunks
+    }
     val rates = linkedMapOf("Slower" to 0.85f, "Normal" to 1f, "Faster" to 1.15f)
     fun safeRate(rate: Float) = rates.values.firstOrNull { it == rate } ?: 1f
     fun britishVoices(voices: List<InstalledVoice>) = voices

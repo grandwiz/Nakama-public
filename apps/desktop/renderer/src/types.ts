@@ -7,6 +7,7 @@ export type Page =
   | "assistant"
   | "boards"
   | "routines"
+  | "clock"
   | "agent-office"
   | "core-memory"
   | "skills"

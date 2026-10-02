@@ -1,6 +1,6 @@
 Nakama production npm dependency notices
 Generated locally by node scripts/release-notices.mjs --write.
-package-lock.json SHA-256: db8e7d79c5a80448c262880e6084be4c9080d1dc1a958369c085d9f6eb4424fe
+package-lock.json SHA-256: 4bc8ebe14db37e30b3a9efac12d88d85c7eb49bb911025628e57b7d5eb53709e
 156 lockfile placements; 148 package/version/notice groups.
 
 These are copies of the installed packages' original notice files. Package metadata is not a substitute for the text below.

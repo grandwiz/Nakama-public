@@ -230,3 +230,19 @@ The existing owner-only approval resolution stores a confirmed push result `{pro
 Deployments and project deletion always require explicit owner approval. Only typed service provisioning can consume an already PC-approved exact matching bounded project grant. Legacy deployments, local deletion, Git pushes and Kling keep their separate fresh approvals. Generic phone actions can execute after the user's clear request, subject to Android permission and the optional confirmation setting. General shell access can perform destructive or deployment work, so raw command execution requires approval rather than claiming keyword filters guarantee safety. Initial CLI workers operate in read-only/planning modes; controlled host operations own mutations.
 
 No browser, phone, email, or document content grants new authority. Provider instructions treat it as untrusted data. No connection is shown as verified until it has actually been tested. Media generation uses explicitly configured APIs and spend controls; Workspace consumer access is not assumed to be an API entitlement.
+
+## Installed Android app selectors
+
+- `POST /api/device/apps`: a paired Android device with project and Google access supplies its own `{apps:[{packageName,label}]}` launcher-visible list (maximum 1,000). It cannot name another device.
+- `GET /api/devices/:id/apps`: Windows owner only; returns `{deviceId,apps,available,expiresAt?}`. Permission loss, revocation and a 90-second expiry remove availability. Catalogs are memory-only and excluded from shared state and model context.
+- These routes do not grant app control, observation, notification or microphone permission. Selected package IDs remain the exact execution/consent identity; labels are display data.
+
+## Built-in PC clock
+
+- `GET /api/clock` returns `{now,timeZone,timers}`, settling expired countdowns first. Timer records expose identity, title, status, revision and remaining seconds. Private request-deduplication hashes stay out of shared state.
+- `POST /api/clock/timers` accepts `{durationSeconds,title?,requestId?}`. Duration is an integer from 1 to 604800 seconds. A repeated request ID with the same caller/body returns the existing timer; changing its meaning is rejected.
+- `POST /api/clock/timers/:id/pause|resume|cancel|dismiss` accepts the current `{revision}`. A stale revision or invalid state transition fails without applying the requested change.
+- The Windows owner can manage all PC timers. A paired Android API caller requires shared personal access and can only see/change its own records. Clock-related chat receipts and timer attention items retain that scope. Browser tokens cannot use these routes.
+- Timer expiry creates a persistent generic attention notice; opening it navigates to Clock. The host must run and stay awake for timely delivery. On restart, past deadlines finish and paused timers stay paused.
+
+Android's new direct Clock/voice path schedules phone timers locally. Those records stay in Android storage and are not mirrored into the PC timer collection. Clock/navigation commands do not grant permissions or call a model.

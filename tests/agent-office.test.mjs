@@ -232,7 +232,7 @@ test("interaction changes produce one real task and unsupported exact effort fai
     ),
     { status: 403 },
   );
-  const result = await ask(host, "Hello");
+  const result = await ask(host, "Explain how rainbows form");
   await until(() => calls.length === 1);
   assert.equal(calls[0].provider.selectedModel, "sonnet");
   assert.equal(calls[0].provider.effort, "medium");
@@ -265,7 +265,7 @@ test("interaction changes produce one real task and unsupported exact effort fai
 test("agent names survive phase, output and stop receipts; late callbacks cannot revive a stopped worker", async (t) => {
   const { host, calls } = await fixture(t);
   const results = await Promise.all([
-    ask(host, "Hello"),
+    ask(host, "Explain how rainbows form"),
     ask(host, "Research accessible keyboards"),
   ]);
   await until(() => calls.length === 2);
@@ -331,7 +331,7 @@ test("busy project planning does not block local status, navigation or an indepe
   assert.match(status.reply, /planning/);
   const navigation = await ask(host, "Open agent office");
   assert.equal(navigation.outcome.target, "agent-office");
-  const hello = await ask(host, "Hello", { projectId: project.id });
+  const hello = await ask(host, "Explain how rainbows form", { projectId: project.id });
   await until(() => calls.length === 3);
   const agents = (await office(host)).agents;
   const manager = agents.find(
@@ -384,7 +384,7 @@ test("busy project planning does not block local status, navigation or an indepe
 
 test("office privacy follows both shared-data grants and unrelated Chrome credentials cannot read it", async (t) => {
   const { host, calls } = await fixture(t);
-  await ask(host, "Hello");
+  await ask(host, "Explain how rainbows form");
   await until(() => calls.length === 1);
   const phone = await paired(host),
     chrome = await paired(host, "chrome");

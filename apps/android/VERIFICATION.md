@@ -45,3 +45,17 @@ Read-only phone observation requires separate explicit consent for one exact app
 Physical accessibility observation, third-party app behavior, reliable notification delivery, background survival and battery use remain separate acceptance work. Real browser login, touch/keyboard handling, CAPTCHA, queue and payment completion also require human acceptance. The synthetic tests do not establish retailer stock accuracy or instant purchasing.
 
 Android can save a held improvement request, view permitted evidence and stop its own request. It cannot release the development hold, approve an update or install one through this panel. A local debug build uses the builder's development key; updating an existing installation requires the matching signing identity. The public source contains no signing keys or private device data.
+
+## App-selector and voice preview follow-up (2026-10-02)
+
+The earlier public preview build used versionCode 2 while retaining dev.nakama.companion, versionName 0.1.0 and the existing local debug signing configuration. In this checkout, 94 JVM tests, app/instrumentation builds and lint passed (zero errors, 34 warnings, two hints). Thirty-five focused Android 16 emulator cases passed across voice, wake conversations, input-specific replies, settings, app selectors, Mote, monitoring, autonomous tasks and visible control. One initial picker fixture failed to scroll to its target; its corrected two-test rerun passed. The fixture's exported control activity is launcher-visible only in the test APK so it can exercise the real selection guard.
+
+All audio and host/model responses were synthetic. The emulator was newly created with disposable state. No personal device received instrumentation, and the owner chose manual installation of the completed APK. Microphone recognition, force-stop/reboot/vendor lifecycle behavior, alarm sound, conversation quality and third-party app control remain physical/live acceptance. See [the complete run record](../../docs/verification.md).
+
+## Clock and continuous-wake follow-up (2026-10-02)
+
+Preview build 3 preserves the existing application ID, version name and debug signing identity. The final cached/offline build passed 114 JVM tests and lint with zero errors, 38 warnings and two hints. The final combined disposable Android 16 emulator run passed all 41 cases, including three local Clock fixtures and the expanded speech/permission checks; its crash buffer was empty.
+
+An initial run had two Clock fixture failures (Compose scroll timing and test-package preference context). Correcting those test boundaries produced the successful full rerun. Local timer state-machine checks cover deadline restoration, pause/resume/cancel, denied permission/registration failure, stale alarm receipts, bounded history and no model calls. Clock UI tests use synthetic alarm/notification effects. Voice tests use synthetic callbacks/PCM rather than recording a microphone.
+
+Actual phone/tablet audio, recognizer continuous-session support, listening chimes, background reliability, battery impact and audible timer delivery still require manual acceptance. Local package integrity and signing checks passed; no physical-device install or provider inference was performed. See [setup steps](../../docs/android-guide.md#optional-local-nakama-wake-word) and [Clock behavior](../../docs/clock.md).

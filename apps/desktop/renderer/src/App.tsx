@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   CircleHelp,
   ClipboardList,
+  Clock3,
   Folder,
   FolderOpen,
   Gauge,
@@ -62,6 +63,7 @@ import { GitHubImport } from "./github-projects";
 import { ProjectDeliveryPage } from "./project-delivery";
 import { ProjectSetupPage } from "./project-setup";
 import { BrowserStudioPage } from "./browser-studio";
+import { ClockPage } from "./clock";
 import { MonitoringPage } from "./monitoring";
 import { SelfMaintenancePanel } from "./self-maintenance";
 import { navigationOutcome } from "./agent-office-model";
@@ -99,6 +101,7 @@ const pages: { id: Page; label: string; icon: typeof Home; group: string }[] = [
   },
   { id: "delivery", label: "Delivery", icon: ShieldCheck, group: "Workspace" },
   { id: "browser", label: "Nakama browser", icon: Globe, group: "Workspace" },
+  { id: "clock", label: "Clock", icon: Clock3, group: "Workspace" },
   { id: "monitoring", label: "Monitoring", icon: Bell, group: "Workspace" },
   {
     id: "self-maintenance",
@@ -546,6 +549,7 @@ export function App() {
             {page === "browser" && (
               <BrowserStudioPage initialSessionId={focusedBrowserSessionId} />
             )}
+            {page === "clock" && <ClockPage />}
             {page === "monitoring" && <MonitoringPage />}
             {page === "self-maintenance" && <SelfMaintenancePage />}
             {page === "devices" && <DevicesPage />}

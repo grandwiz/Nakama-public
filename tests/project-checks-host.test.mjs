@@ -64,9 +64,19 @@ async function fixture(t) {
   );
   await fs.writeFile(
     path.join(project.path, "wait.cjs"),
-    'console.log("LOCAL_WAIT");setTimeout(()=>{require("node:fs").writeFileSync("natural-exit.txt","not stopped");},10000);',
+    // Keep the real npm descendant alive until Stop closes it or teardown releases it.
+    // A wall-clock deadline can finish before Stop while another test/build is busy.
+    `const fs = require("node:fs");
+    const waiting = setInterval(() => {
+      if (!fs.existsSync("release-wait.txt")) return;
+      clearInterval(waiting);
+      fs.writeFileSync("natural-exit.txt", "not stopped");
+    }, 25);
+    console.log("LOCAL_WAIT");`,
   );
   t.after(async () => {
+    // Release a surviving fixture descendant even if a Stop assertion failed.
+    await fs.writeFile(path.join(project.path, "release-wait.txt"), "teardown");
     await host.close();
     await until(
       () => !host.checking.size,
@@ -307,6 +317,12 @@ test("phone permissions, ownership and revocation during task registration are e
     { status: 403 },
   );
   const running = await resolve(host, approval);
+  await until(
+    () => host.store.state.tasks.some(
+      (task) => task.id === running.taskId && task.output.includes("LOCAL_WAIT"),
+    ),
+    "Owned check child did not reach its release gate",
+  );
   await assert.rejects(
     host.dispatch(
       "POST",
@@ -322,7 +338,9 @@ test("phone permissions, ownership and revocation during task registration are e
     {},
     one.principal,
   );
-  await finished(host, running.taskId);
+  const stopped = await finished(host, running.taskId);
+  assert.equal(stopped.status, "stopped");
+  assert.equal(host.commandProcesses.has(running.taskId), false);
   await assert.rejects(fs.stat(path.join(project.path, "natural-exit.txt")), {
     code: "ENOENT",
   });

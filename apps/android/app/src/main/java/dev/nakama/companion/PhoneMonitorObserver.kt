@@ -30,7 +30,8 @@ object PhoneMonitorObserver {
     fun permitsLocalRead(packageName: String): Boolean = consent?.let { it.packageName == packageName && System.currentTimeMillis() < it.expiresAt && SystemClock.elapsedRealtime() < it.elapsedDeadline } == true
 
     fun readiness(context: Context, packageName: String): String? {
-        if (!MonitorPolicy.packageAllowed(packageName)) return "Choose an ordinary app's exact Android package. Protected system apps are unavailable."
+        if (!MonitorPolicy.packageAllowed(packageName)) return "Choose an eligible installed app. Protected system apps are unavailable."
+        if (!InstalledApps.contains(context, packageName)) return "This app is no longer installed or launchable. Choose an installed app."
         if (!NakamaAccessibilityService.connected) return "Enable Nakama Accessibility in Device settings first."
         if (!MascotOverlayService.running || !android.provider.Settings.canDrawOverlays(context)) return "Enable the visible Mote mascot before allowing app observation."
         if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked || !context.getSystemService(PowerManager::class.java).isInteractive) return "Wake and unlock this phone before allowing observation."

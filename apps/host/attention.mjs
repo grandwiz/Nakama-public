@@ -143,5 +143,8 @@ export function publicAttention(
         approvalId: approval.id,
         createdAt: approval.createdAt,
       });
+  for (const timer of state.clock?.timers || [])
+    if (timer.status === "finished" && (principal.kind === "owner" || timer.requestedBy === principal.id))
+      items.push({ id: `timer:${timer.id}`, kind: "timer", title: "A Nakama timer has finished", timerId: timer.id, createdAt: timer.finishedAt });
   return { version: 1, items: items.slice(-100) };
 }

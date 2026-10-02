@@ -72,6 +72,7 @@ const destinations = new Set<Page>([
   "projects",
   "boards",
   "routines",
+  "clock",
   "core-memory",
   "skills",
   "browser",

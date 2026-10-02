@@ -114,7 +114,8 @@ fun MonitoringPanel(identityKey: String?, allowed: Boolean, browserAllowed: Bool
                     FilterChip(drafts.kind == kind, { drafts.kind = kind; drafts.conditionType = if (kind == "website") "stock" else "text"; drafts.target = "" }, label = { Text(label) }, enabled = !busy)
                 }
             }
-            OutlinedTextField(drafts.target, { drafts.target = it.take(2048) }, Modifier.fillMaxWidth(), label = { Text(when (drafts.kind) { "website" -> "Public HTTPS page URL"; "windows_app" -> "Exact process name, e.g. example.exe"; else -> "Exact Android package, e.g. com.example.reader" }) }, enabled = !busy, singleLine = true)
+            if (drafts.kind == "android_app") InstalledAppPicker("Installed app to monitor", drafts.target, enabled = !busy, controlOnly = true, onSelected = { drafts.target = it })
+            else OutlinedTextField(drafts.target, { drafts.target = it.take(2048) }, Modifier.fillMaxWidth(), label = { Text("Public HTTPS page URL") }, enabled = !busy, singleLine = true)
             if (drafts.kind == "website") Row {
                 FilterChip(drafts.conditionType == "stock", { drafts.conditionType = "stock" }, label = { Text("Product stock data") }, enabled = !busy)
                 FilterChip(drafts.conditionType == "text", { drafts.conditionType = "text" }, label = { Text("Exact visible text") }, enabled = !busy)
@@ -125,6 +126,7 @@ fun MonitoringPanel(identityKey: String?, allowed: Boolean, browserAllowed: Bool
             } else Text("Uses the page's product stock evidence. Missing or ambiguous evidence pauses for review.", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(drafts.cadence, { drafts.cadence = it.filter(Char::isDigit).take(5) }, Modifier.fillMaxWidth(), label = { Text("Seconds between checks (30–86400)") }, enabled = !busy, singleLine = true)
             Button(enabled = !busy && loaded && drafts.title.isNotBlank() && drafts.target.isNotBlank() && (drafts.conditionType == "stock" || drafts.contains.isNotBlank()) && (drafts.cadence.toIntOrNull() ?: 0) in 30..86400 && (drafts.kind != "website" || browserAllowed), onClick = {
+                if (drafts.kind == "android_app" && (!InstalledApps.contains(context, drafts.target) || !MonitorPolicy.packageAllowed(drafts.target))) { error = "Choose an eligible installed app first."; return@Button }
                 val condition = JSONObject().put("type", drafts.conditionType).apply { if (drafts.conditionType == "text") { put("contains", drafts.contains.trim()); put("excludes", drafts.excludes.trim()) } }
                 val body = JSONObject().put("title", drafts.title.trim()).put("kind", drafts.kind).put("condition", condition).put("intervalSeconds", drafts.cadence.toInt())
                 when (drafts.kind) { "website" -> body.put("url", drafts.target.trim()); "windows_app" -> body.put("processName", drafts.target.trim()); else -> body.put("deviceId", identityKey).put("packageName", drafts.target.trim()) }
@@ -170,6 +172,7 @@ fun MonitoringPanel(identityKey: String?, allowed: Boolean, browserAllowed: Bool
                         Text("Private setup confirmation and forgetting this shopping profile are available on your PC.", style = MaterialTheme.typography.bodySmall)
                     }
                     if (kind == "android_app" && row.optString("deviceId") == identityKey) {
+                        Text(InstalledApps.label(context, row.optString("packageName")), style = MaterialTheme.typography.titleSmall)
                         Text("Read-only observation needs this exact app visible and unlocked, Accessibility enabled and Mote running. Only a match status leaves the phone. Login/payment screens stop observation.", style = MaterialTheme.typography.bodySmall)
                         Text(PhoneMonitorObserver.status, style = MaterialTheme.typography.bodySmall)
                         if (PhoneMonitorObserver.activeId == id) OutlinedButton(onClick = { PhoneMonitorObserver.stop(context, id) }) { Text("Stop phone observation") }
@@ -180,7 +183,7 @@ fun MonitoringPanel(identityKey: String?, allowed: Boolean, browserAllowed: Bool
         }
     }
     confirm?.let { row ->
-        val prompt = "Allow local read-only checks of ${row.optString("packageName")} for up to 30 minutes while Mote is visible? Rule: ${row.optJSONObject("condition")?.optString("contains").orEmpty()}. Only match/no-match or unavailable status goes to your PC. This does not allow taps or typing. Locking the phone or stopping Mote ends consent."
+        val prompt = "Allow local read-only checks of ${InstalledApps.label(context, row.optString("packageName"))} for up to 30 minutes while Mote is visible? Rule: ${row.optJSONObject("condition")?.optString("contains").orEmpty()}. Only match/no-match or unavailable status goes to your PC. This does not allow taps or typing. Locking the phone or stopping Mote ends consent."
         AlertDialog(onDismissRequest = { confirm = null }, title = { Text("Read-only phone monitoring") }, text = { Text(prompt) },
             confirmButton = { TextButton(enabled = !busy, onClick = {
                 confirm = null

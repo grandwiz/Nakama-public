@@ -33,3 +33,6 @@ output/release/
 
 __pycache__/
 *.pyc
+
+# Generated local preview integrity record.
+output/package-manifest.json

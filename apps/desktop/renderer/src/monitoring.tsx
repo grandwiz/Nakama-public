@@ -4,6 +4,7 @@ import { api } from "./bridge";
 import { Button, SectionTitle, Status } from "./components";
 import { useNakama } from "./context";
 import "./monitoring.css";
+import { InstalledAppSelect, InstalledAppName, useInstalledApps } from "./installed-apps";
 
 export interface MonitorRecord {
   id: string;
@@ -54,6 +55,7 @@ export function MonitoringPage() {
   const [excludes, setExcludes] = useState("");
   const [interval, setInterval] = useState(60);
   const [deviceId, setDeviceId] = useState("");
+  const installedApps = useInstalledApps(deviceId);
   const [shared, setShared] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -166,6 +168,7 @@ export function MonitoringPage() {
         <form
           onSubmit={async (event) => {
             event.preventDefault();
+            if (kind === "android_app" && !installedApps.apps.some((app) => app.packageName === target)) { setError("Choose an installed app from this device’s current list."); return; }
             const result = await request("POST", "/api/monitors", {
               title: title.trim(),
               kind,
@@ -207,9 +210,11 @@ export function MonitoringPage() {
               <label>
                 Watch
                 <select
+                  aria-label="Watch"
                   value={kind}
                   onChange={(event) => {
                     setKind(event.target.value);
+                    setTarget("");
                     setShared([]);
                   }}
                 >
@@ -223,8 +228,8 @@ export function MonitoringPage() {
                   ? "Product or page URL"
                   : kind === "windows_app"
                     ? "Exact process name (.exe)"
-                    : "Exact Android package"}
-                <input
+                    : "Installed app"}
+                {kind === "android_app" ? <InstalledAppSelect deviceId={deviceId} value={target} onChange={setTarget} controlOnly /> : <input
                   required
                   value={target}
                   onChange={(event) => setTarget(event.target.value)}
@@ -233,17 +238,18 @@ export function MonitoringPage() {
                       ? "https://your-shop.example/product"
                       : kind === "windows_app"
                         ? "example.exe"
-                        : "com.example.app"
+                        : ""
                   }
-                />
+                />}
               </label>
               {kind === "android_app" && (
                 <label>
                   Phone or tablet
                   <select
+                    aria-label="Phone or tablet"
                     required
                     value={deviceId}
-                    onChange={(event) => setDeviceId(event.target.value)}
+                    onChange={(event) => { setDeviceId(event.target.value); setTarget(""); }}
                   >
                     <option value="">Select a paired device</option>
                     {state.devices
@@ -344,7 +350,7 @@ export function MonitoringPage() {
               is reported as unknown. Android observation also needs explicit
               consent on that phone.
             </p>
-            <Button disabled={busy || !snapshot}>
+            <Button disabled={busy || !snapshot || (kind === "android_app" && !installedApps.apps.some((app) => app.packageName === target))}>
               <Bell size={16} /> Save monitor
             </Button>
           </fieldset>
@@ -371,7 +377,7 @@ export function MonitoringPage() {
                 <Status value={row.status} />
               </div>
               <p className="monitor-target">
-                {row.url || row.processName || row.packageName}
+                {row.url || row.processName || <InstalledAppName deviceId={row.deviceId || ""} packageName={row.packageName || ""} />}
               </p>
               <p>{row.detail || "No result recorded."}</p>
               <dl>

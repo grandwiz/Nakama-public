@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Runtime notices bind exact lockfile bytes on every platform.
+package-lock.json text eol=lf
+docs/third-party-runtime-notices.txt text eol=lf
+docs/third-party-runtime-inventory.json text eol=lf

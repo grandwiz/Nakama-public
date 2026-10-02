@@ -25,6 +25,8 @@ class VoiceController internal constructor(
     private var utteranceGeneration = 0L
     private var activeUtterance: String? = null
     private var handsFree = false
+    private var deferredSpeech: String? = null
+    private val speechQueue = ArrayDeque<String>()
     var session: Long = 0L; private set
     var voices: List<InstalledVoice> by mutableStateOf(emptyList()); private set
     var selectedVoice: String by mutableStateOf(""); private set
@@ -71,11 +73,15 @@ class VoiceController internal constructor(
                         selectedVoice = if (ready) chosen!!.name else ""
                         engineStatus = if (ready) "British English · offline voice selected" else "No usable offline British English voice. Add English (United Kingdom) voice data in Android speech settings, then refresh."
                     }.onFailure { engineStatus = "Could not read Android voices. Check speech settings, then refresh voices." }
+                    val waiting = deferredSpeech; deferredSpeech = null
+                    if (ready && waiting != null) speak(waiting)
+                    else if (waiting != null) state(engineStatus)
                 }
             }, { id, success ->
                 if (!closed && generation == engineGeneration && id == activeUtterance) {
                     activeUtterance = null
-                    if (!success) { handsFree = false; state("Voice playback failed. Check Android's speech settings.") }
+                    if (!success) { handsFree = false; speechQueue.clear(); state("Voice playback failed. Check Android's speech settings.") }
+                    else if (speechQueue.isNotEmpty()) speakNext()
                     else if (handsFree) listen(true) else state("Ready")
                 }
             })
@@ -151,26 +157,38 @@ class VoiceController internal constructor(
     fun preview() { stop(); speak("Hello, I'm Nakama. What shall we make today?") }
 
     fun speak(text: String) {
-        if (closed || !ready || selectedVoice.isBlank()) return
-        val plain = text.replace(Regex("```[\\s\\S]*?```"), " Code is available in the conversation. ").replace(Regex("[*#`]"), "").take(3500)
-        if (plain.isBlank()) return
-        // Recheck before each utterance so disappearing data cannot select an online default.
+        if (closed || text.isBlank()) return
+        if (!ready || selectedVoice.isBlank()) {
+            if (engineStatus.startsWith("Loading")) { deferredSpeech = text; state("Preparing your offline spoken reply…") }
+            else { handsFree = false; state(engineStatus) }
+            return
+        }
+        speechQueue.clear(); speechQueue.addAll(VoicePolicy.speechChunks(text))
+        speakNext()
+    }
+    private fun speakNext() {
+        val plain = speechQueue.removeFirstOrNull() ?: return
+        // Recheck each chunk so missing voice data never selects a network default.
         val safe = runCatching { playback?.voices()?.any { it.name == selectedVoice && it.usableOffline && it.language.equals("en", true) && it.country.equals("GB", true) } == true && playback?.select(selectedVoice) == true }.getOrDefault(false)
         if (!safe) { stop(); ready = false; engineStatus = "The selected offline voice is no longer available. Refresh voices."; return }
-        // A pending/team reply can arrive during Talk. Never accept transcription of our own speech.
-        // Keep only the hands-free intent; the matching completed utterance may start a fresh recognizer.
         ++recognitionGeneration
         runCatching { recognizer?.close() }; recognizer = null
         val id = "nakama-${++utteranceGeneration}"
         activeUtterance = id
         state("Speaking · offline Android voice")
         if (!runCatching { playback?.speak(plain, id) == true }.getOrDefault(false)) {
-            activeUtterance = null; handsFree = false; state("Voice playback failed. Check Android's speech settings.")
+            activeUtterance = null; handsFree = false; speechQueue.clear(); state("Voice playback failed. Check Android's speech settings.")
         }
     }
 
+    fun pauseCapture() {
+        handsFree = false; ++recognitionGeneration
+        runCatching { recognizer?.close() }; recognizer = null
+        state(if (activeUtterance != null) "Speaking - offline Android voice" else "Ready")
+    }
     fun stop() {
         ++session
+        deferredSpeech = null; speechQueue.clear()
         handsFree = false; ++recognitionGeneration; activeUtterance = null
         runCatching { recognizer?.close() }; recognizer = null
         runCatching { playback?.stop() }; state("Ready")

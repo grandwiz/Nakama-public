@@ -1,0 +1,12 @@
+.clock-page { display: grid; gap: 22px; }
+.clock-now { display: flex; align-items: center; gap: 20px; }
+.clock-face { font-size: clamp(32px, 5vw, 56px); font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.clock-form { border: 0; padding: 0; margin: 20px 0 0; display: grid; gap: 16px; }
+.clock-duration { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 440px; }
+.clock-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.clock-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.clock-list-heading label { display: flex; gap: 8px; align-items: center; }
+.clock-timers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; }
+.clock-countdown { font-size: 36px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 16px 0 22px; }
+.clock-finished { border: 2px solid #c99128; }
+.clock-timer h3 { overflow-wrap: anywhere; }

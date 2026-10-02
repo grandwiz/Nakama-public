@@ -6,7 +6,7 @@ function createDesktopAttention({ Notification, onOpen }) {
   function update(attention) {
     const items = (attention?.items || []).filter(
       (item) =>
-        ["monitor", "upgrade"].includes(item.kind) &&
+        ["monitor", "upgrade", "timer"].includes(item.kind) &&
         typeof item.id === "string" &&
         item.id.length <= 300,
     );
@@ -21,10 +21,10 @@ function createDesktopAttention({ Notification, onOpen }) {
       if (seen.has(item.id)) continue;
       const notification = new Notification({
         title:
-          item.kind === "monitor"
+          item.kind === "timer" ? "A Nakama timer has finished" : item.kind === "monitor"
             ? "A Nakama monitor needs you"
             : "A Nakama upgrade needs review",
-        body: "Open Nakama to review securely.",
+        body: item.kind === "timer" ? "Open Clock to dismiss your timer." : "Open Nakama to review securely.",
         silent: false,
       });
       notification.on("click", () => {

@@ -614,7 +614,7 @@ test("location replies stay scoped to their phone and never enter unrelated prov
     ),
     true,
   );
-  await chat(f.host, "Hello", a);
+  await chat(f.host, "Explain how rainbows form", a);
   for (let index = 0; index < 100 && !f.calls.length; index++)
     await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(f.calls.length, 1);

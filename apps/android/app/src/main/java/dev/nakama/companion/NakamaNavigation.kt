@@ -29,6 +29,7 @@ object NavigationPolicy {
         "task board" to NakamaNavigation.Page("Tools", "Tasks"), "clipboard" to NakamaNavigation.Page("Tools", "Tasks"),
         "routines" to NakamaNavigation.Page("Tools", "Routines"), "routines board" to NakamaNavigation.Page("Tools", "Routines"),
         "alarms" to NakamaNavigation.Page("Tools", "Routines"),
+        "clock" to NakamaNavigation.Page("Tools", "Clock"), "timers" to NakamaNavigation.Page("Tools", "Clock"),
         "agents" to NakamaNavigation.Page("Tools", "Agent office"), "agent office" to NakamaNavigation.Page("Tools", "Agent office"),
         "office" to NakamaNavigation.Page("Tools", "Agent office"), "team" to NakamaNavigation.Page("Tools", "Agent office"),
         "core memory" to NakamaNavigation.Page("Tools", "Core Memory"), "memory" to NakamaNavigation.Page("Tools", "Core Memory"),
@@ -72,6 +73,7 @@ object NavigationPolicy {
     fun hostTarget(target: String): NakamaNavigation.Page? = when (target) {
         "home" -> pages["home"]; "chat", "assistant" -> pages["chat"]; "projects" -> pages["projects"]
         "tasks", "boards", "task-board", "taskBoard" -> pages["tasks"]; "routines" -> pages["routines"]
+        "clock", "timers" -> pages["clock"]
         "agents", "agent-office", "agentOffice" -> pages["agents"]
         "core-memory", "coreMemory", "memory" -> pages["memory"]
         "skills" -> pages["skills"]; "github" -> pages["github"]
