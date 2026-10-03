@@ -45,7 +45,18 @@ export function ProjectWorkflowPanel({
 }) {
   const { state } = useNakama();
   const runs = (state.projectWorkflows || [])
-    .filter((run) => run.projectId === projectId)
+    .filter(
+      (run) =>
+        run.projectId === projectId &&
+        ![
+          "completed",
+          "cancelled",
+          "canceled",
+          "stopped",
+          "interrupted",
+          "failed",
+        ].includes(run.status),
+    )
     .slice(-3)
     .reverse();
   if (!runs.length) return null;

@@ -10,6 +10,13 @@ export function privateIpv4Kind(address) {
   return null;
 }
 
+export function privateVpnAddress(interfaces = os.networkInterfaces()) {
+  return Object.entries(interfaces).filter(([name]) => /tailscale/i.test(name)).flatMap(([,entries]) => entries || []).find(entry => !entry.internal && privateIpv4Kind(entry.address) === "vpn")?.address || null;
+}
+export function hostBindAddress(config, interfaces = os.networkInterfaces()) {
+  if (config.vpnOnly === true) return privateVpnAddress(interfaces) || "127.0.0.1";
+  return config.allowLan ? "0.0.0.0" : "127.0.0.1";
+}
 // Read-only desktop diagnostics. These are interface candidates, never a claim
 // that Windows Firewall or the phone's network can reach this PC.
 export function networkStatus({
@@ -49,11 +56,11 @@ export function networkStatus({
       a.address.localeCompare(b.address),
   );
   return {
-    configured: { allowLan: config.allowLan === true, port: config.port },
+    configured: { allowLan: config.allowLan === true, vpnOnly: config.vpnOnly === true, port: config.port },
     listener: { active, allowLan, address: bindAddress, port },
     restartNeeded:
       active &&
-      (allowLan !== (config.allowLan === true) ||
+      ((config.vpnOnly === true ? bindAddress !== hostBindAddress(config, interfaces) : allowLan !== (config.allowLan === true) || config.allowLan === true && privateIpv4Kind(bindAddress) === "vpn") ||
         (config.port !== 0 && port !== config.port)),
     addresses,
   };

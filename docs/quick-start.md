@@ -50,8 +50,8 @@ Nakama can use **your existing eligible subscriptions** without automatic paid A
 ## 3. Pair Android
 
 1. Build and install your own locally signed APK on a 64-bit arm64-v8a or x86_64 phone/tablet running Android 15 or later. Windows Android builds need JDK 17, SDK 36, Python 3.11+, NDK 28.2.13676358 and CMake 3.22.1. Gradle prepares the bundled speech runtime automatically; see [build and installation instructions](android-guide.md#build-android-with-bundled-speech).
-2. Put the phone and PC on a reachable private network. For mobile data, configure a private network such as Tailscale first.
-3. In desktop Settings, enable **Allow paired devices over a private network**. Fully quit using **Quit Nakama and disconnect devices** in the Windows tray, then reopen Control Center. Closing the window alone can leave the old listener running.
+2. Put the phone and PC on a reachable private network. For mobile data, use the [guided Tailscale setup](remote-access.md), including refreshing existing paired devices before selecting VPN-only access.
+3. For home LAN access, in desktop Settings choose **Home LAN / private network** under **Allow paired devices over a private network**. Fully quit using **Quit Nakama and disconnect devices** in the Windows tray, then reopen Control Center. Closing the window alone can leave the old listener running.
 4. Open **Devices → Pair a device** and choose Android. Select the detected Wi-Fi/Ethernet address for your home network, or enter the PC's private VPN HTTPS address. Use **Check network again** after changing the connection. Do not use a virtual-machine adapter or `localhost`: on the phone, that means the phone itself. The screen blocks ticket creation while the PC is listening locally only or needs a restart.
 5. Copy the complete pairing details into Android. The payload carries a one-time ticket and the host certificate fingerprint.
 6. Confirm that the expected device appears in Control Center. Pair the tablet separately.
@@ -74,17 +74,23 @@ The extension supports explicit page actions and guarded screenshots of the focu
 
 ## 5. Set up your services
 
+For an existing local Windows folder, use **Projects → Import existing folder** and select a library on the PC. Android can then browse and import those folders in place. See [local project import](project-import.md).
+
 For an existing GitHub project, first add a labelled GitHub account in **Connections**. Then use **Projects → Import from GitHub**, choose that account and repository, and clone into a new managed workspace folder. In the project, **Git changes** provides fetch, fast-forward pull, reviewed selected-file commit and push preparation. Android provides the same host-backed operations; credentials and final push approval stay on the PC. [Step-by-step GitHub workflow](github-projects.md).
 
 Connections hold separately labelled accounts. Provider tokens are saved in the Windows-protected vault, and a connection is only shown as verified after a successful provider check. Gmail/Calendar use a Google desktop OAuth setup and can hold several personal accounts. These Google connections are independent of your AI and Kling accounts.
 
 Open a service's account to browse its supported resources. Vercel/Render deployments target existing provider projects and an exact Git commit, with a mandatory approval. Follow [Google setup](google-accounts.md), [service connections](service-connections.md), [media generation](media-generation.md), and [Blender](blender.md). Credentials alone do not mean every provider action is implemented; the [status table](implementation-status.md) identifies the limits.
 
+Read [Claude usage](claude-usage.md) for read-only subscription quota display and the official /usage sign-in handoff.
+
 ## 6. Try your everyday tools
 
 On Windows open **My clipboard**, **Core Memory** or **Agent office**. Android exposes the corresponding tools alongside Chat and Projects. Start with “add task try my Nakama”, “show my tasks”, “open agent office” and “what are you working on?”. Supported navigation changes only the requesting app; it does not move another device's screen.
 
 Select an agent's little screen to inspect its actual assignment and available output. Light green means GPT and orange means Claude; text labels identify the provider too. The project manager record represents orchestration, while child records represent actual worker requests. A sleeping/empty office does not mean a worker is secretly running.
+
+Chat history rotates after six hours and completed work leaves the active chat and office. Originals and deterministic local summaries stay searchable; model history has a fixed size limit. Tap a message to show its timestamp. See [chat memory](chat-memory.md).
 
 Tasks finish according to recorded work; manually checking a card never finishes an underlying agent. Routines can be edited, paused and removed. **Core Memory** lets you inspect and correct saved preferences and Nakama personality; pause learning or reuse whenever you want. [Personal foundations](foundations.md).
 

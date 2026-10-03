@@ -116,6 +116,9 @@ object LocalTimers {
         return LocalTimerEngine(AndroidLocalTimerStorage(context), AndroidEffects(context), { moment(context) }, { id }).create(seconds, title)
     }
     @Synchronized fun change(context: Context, id: String, revision: Int, action: String) = engine(context).change(id, revision, action)
+    @Synchronized fun silenceFinished(context: Context) {
+        snapshot(context).filter { it.status == "finished" }.forEach { change(context, it.id, it.revision, "dismiss") }
+    }
     @Synchronized fun restore(context: Context) { engine(context).restore() }
     @Synchronized fun receive(context: Context, intent: Intent) {
         when (intent.action) {

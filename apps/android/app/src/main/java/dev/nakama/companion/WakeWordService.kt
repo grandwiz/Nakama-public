@@ -31,6 +31,18 @@ class WakeWordService : Service() {
     private var notificationBuilder: Notification.Builder? = null
     private var notificationStatus = ""
     private var alarmRevision: String? = null
+    private var cpuLock: android.os.PowerManager.WakeLock? = null
+    private var nextLockRenewal = 0L
+    private var followUpIdentity: HostIdentity? = null
+    private fun cancelCurrentReply() { continuations.clear(); conversation?.cancel(); voice?.stop(); loop?.cancelFollowUp(); followUpIdentity = null }
+    private fun interruptPlayback() { cancelCurrentReply(); PhoneAlarmScheduler.silence(this); LocalTimers.silenceFinished(this) }
+    private fun allowFollowUp() { if (!stopped && running) { followUpIdentity = PairingVault(this).load(); loop?.allowFollowUp() } }
+    private fun keepCpuReady() {
+        val now = SystemClock.elapsedRealtime()
+        if (now < nextLockRenewal) return
+        val lock = cpuLock ?: getSystemService(android.os.PowerManager::class.java).newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Nakama:WakeListening").apply { setReferenceCounted(false) }.also { cpuLock = it }
+        lock.acquire(10 * 60_000L); nextLockRenewal = now + 5 * 60_000L
+    }
     private var activeIdentity: HostIdentity? = null
     private var activeWorkflowId: String? = null
     private val continuations = ArrayDeque<Pair<HostIdentity, JSONObject>>()
@@ -57,10 +69,13 @@ class WakeWordService : Service() {
         catch (_: Exception) { status = "Paused · open Nakama to enable wake listening"; stopSelf(); return START_NOT_STICKY }
         stopped = false; running = true
         continueReplies = { saved, receipts ->
-            if (!running || stopped || !unlocked || PairingVault(this).load() != saved || continuations.size + receipts.size > 16) false
+            if (!running || stopped || PairingVault(this).load() != saved || continuations.size + receipts.size > 16) false
             else { receipts.forEach { continuations.addLast(saved to JSONObject(it.toString())) }; true }
         }
-        stopReply = { continuations.clear(); conversation?.cancel(); voice?.stop() }
+        stopReply = ::cancelCurrentReply
+        VoiceOutputBus.onStop = ::interruptPlayback
+        VoiceOutputBus.onFollowUp = ::allowFollowUp
+        VoiceAudioGate.onBusy = { owner -> if (owner !== this) loop?.tick(true) }
         discardWorkflow = { id ->
             continuations.removeAll { it.second.optString("workflowId") == id }
             if (activeWorkflowId == id) { conversation?.cancel(); voice?.stop() }
@@ -70,10 +85,10 @@ class WakeWordService : Service() {
         scope.launch {
             while (isActive) {
                 if (ContextCompat.checkSelfPermission(this@WakeWordService, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED || !manager.areNotificationsEnabled() || manager.getNotificationChannel("nakama_wake").importance == NotificationManager.IMPORTANCE_NONE) { stopped = true; status = "Paused · microphone or notification permission removed"; stopSelf(); break }
-                if (!unlocked) { continuations.clear(); if (conversation?.isActive == true) { conversation?.cancel(); voice?.stop() } }
-                if (unlocked && conversation?.isActive != true && !VoiceAudioGate.busy && continuations.isNotEmpty()) launchConversation(accepted = continuations.removeFirst())
-                loop?.tick(VoiceAudioGate.busy || conversation?.isActive == true || !unlocked)
-                if (!unlocked) status = "Paused · unlock your phone for wake requests"
+                keepCpuReady()
+                if (followUpIdentity != null && PairingVault(this@WakeWordService).load() != followUpIdentity) { loop?.cancelFollowUp(); followUpIdentity = null }
+                if (conversation?.isActive != true && !VoiceAudioGate.busy && continuations.isNotEmpty()) launchConversation(accepted = continuations.removeFirst())
+                loop?.tick(VoiceAudioGate.busyExcept(this@WakeWordService), stopOnly = conversation?.isActive == true || AlarmAudioState.ringing(this@WakeWordService))
                 if (notificationStatus != status) { notificationStatus = status; notificationBuilder?.let { manager.notify(72, it.setContentText(status).build()) } }
                 if (loop?.enabled == false) { stopSelf(); break }
                 delay(200)
@@ -83,12 +98,15 @@ class WakeWordService : Service() {
     }
     private fun createWakeLoop(): WakeWordLoop {
         val services = AndroidVoiceServices(this)
-        return WakeWordLoop(SystemClock::elapsedRealtime, { result, failure -> recognitionFactoryForTest?.invoke(result, failure) ?: services.wakeRecognition(result, failure) }, { if (conversation?.isActive != true) status = it }, ::heard)
+        return WakeWordLoop(SystemClock::elapsedRealtime, { result, failure -> recognitionFactoryForTest?.invoke(result, failure) ?: services.wakeRecognition(result, failure) }, { if (conversation?.isActive != true) status = it }, ::heard,
+            createFollowUp = { result, failure -> recognitionFactoryForTest?.invoke(result, failure) ?: services.recognition(true, {}, {}, result, failure) },
+            createStop = { result, failure -> recognitionFactoryForTest?.invoke(result, failure) ?: checkNotNull(services.stopRecognition(result, failure)) },
+            onStop = { VoiceOutputBus.stopAll() })
     }
     private fun heard(command: String) {
-        if (!running || stopped || !unlocked || conversation?.isActive == true) return
+        if (!running || stopped || conversation?.isActive == true) return
         if (FoundationPolicy.command(command) == FoundationCommand.StopWake) { getSharedPreferences("nakama_preferences", MODE_PRIVATE).edit().putBoolean("wakeEnabled", false).apply(); stopped = true; stopSelf(); return }
-        foregroundCommand?.let { it(command); return }
+        if (unlocked) foregroundCommand?.let { it(command); return }
         launchConversation(command)
     }
     private fun launchConversation(command: String? = null, accepted: Pair<HostIdentity, JSONObject>? = null) {
@@ -104,19 +122,20 @@ class WakeWordService : Service() {
                 }
                 val issuedCommand = directed?.originalCommand ?: command
                 if (issuedCommand != null) LocalClockCommands.parse(issuedCommand)?.let { local ->
+                    if (local == LocalClockCommand.Open && !unlocked) { localReply(issuedCommand, "Unlock your device to open Clock. You can still set or manage timers by voice."); handoff(page = "Clock"); return@launch }
                     val reply = LocalClockActions.execute(this@WakeWordService, local)
-                    say(reply.text)
+                    localReply(issuedCommand, reply.text)
                     if (local == LocalClockCommand.Open) handoff(page = "Clock")
                     return@launch
                 }
                 if (issuedCommand != null && (NavigationPolicy.parse(issuedCommand) != null || FoundationPolicy.command(issuedCommand) != null || PhoneCommandParser.parse(issuedCommand) != null)) {
-                    if (!handoff(issuedCommand)) say("Open Nakama to continue that phone command. Your existing permissions and confirmations still apply.")
+                    if (!handoff(issuedCommand)) localReply(issuedCommand, if (unlocked) "Open Nakama to continue that phone command. Your existing permissions and confirmations still apply." else "Unlock your device to carry out that on-screen phone action. I am still listening.")
                     return@launch
                 }
                 val saved = accepted?.first ?: PairingVault(this@WakeWordService).load()
                 if (saved == null) { say("Pair your PC in Nakama before asking a background question."); handoff(); return@launch }
                 activeIdentity = saved; activeWorkflowId = accepted?.second?.optString("workflowId")
-                val current = { running && !stopped && unlocked && PairingVault(this@WakeWordService).load() == saved }
+                val current = { running && !stopped && PairingVault(this@WakeWordService).load() == saved }
                 accessWatch = launch {
                     while (isActive) {
                         delay(4_500)
@@ -124,7 +143,7 @@ class WakeWordService : Service() {
                             catch (cancelled: CancellationException) { throw cancelled }
                             catch (_: Exception) { null }
                         if (!current() || checked == null || !WakeConversationAccess.allowed(checked, saved.deviceId)) {
-                            voice?.stop(); MoteWorkSignals.clearHost(saved); conversation?.cancel(); break
+                            loop?.cancelFollowUp(); followUpIdentity = null; voice?.stop(); MoteWorkSignals.clearHost(saved); conversation?.cancel(); break
                         }
                     }
                 }
@@ -140,19 +159,32 @@ class WakeWordService : Service() {
                         if (path == "/api/chat") { activeWorkflowId = result.optString("workflowId") }
                         result
                     } finally { work?.let(MoteWorkSignals::endLocalWork) }
-                }, current, ::say, { handoff() }, { snapshot -> syncAlarms(saved, snapshot, current) })
+                }, current, ::say, { handoff() }, { snapshot ->
+                    try { syncAlarms(saved, snapshot, current) }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) {
+                        if (failure is HostException && failure.status in listOf(401, 403)) { PhoneAlarmScheduler.clear(this@WakeWordService); alarmRevision = null; throw failure }
+                        if (current()) status = "Alarm sync needs attention; it will retry on the next refresh"
+                    }
+                }, receiptFeedback = { response, snapshot ->
+                    AlarmReceiptPolicy.request(response, saved.deviceId)?.let { alarm ->
+                        val feedback = PhoneAlarmScheduler.feedback(this@WakeWordService, saved.deviceId, alarm, snapshot.optJSONObject("routineBoard")?.objects("routines").orEmpty())
+                        if (feedback?.needsSetup == true && current()) handoff(page = "Routines")
+                        feedback?.text
+                    }
+                })
                 if (accepted != null) runner.follow(accepted.second) else runner.run(issuedCommand ?: return@launch)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
                 MoteWorkSignals.clearHost()
-                if (running && !stopped && unlocked) { say("I couldn't complete that voice request. Open Nakama to check the connection and task status before trying again."); handoff() }
+                if (running && !stopped) { say("I couldn't complete that voice request. Open Nakama to check the connection and task status before trying again."); handoff() }
             } finally { accessWatch?.cancel(); activeIdentity = null; activeWorkflowId = null; VoiceAudioGate.set(this@WakeWordService, false); if (!stopped && !status.startsWith("Unavailable")) status = "Waiting for the local microphone" }
         }
     }
     private suspend fun runDirectedCommand(command: DirectedDeviceCommand) {
         val saved = PairingVault(this).load() ?: run { say("Pair your PC before targeting another device. Nothing was redirected."); return }
         activeIdentity = saved
-        fun current() = running && !stopped && unlocked && PairingVault(this).load() == saved
+        fun current() = running && !stopped && PairingVault(this).load() == saved
         var accessWatch: Job? = null
         try {
             val directory = withContext(Dispatchers.IO) { HostClient(saved).request("GET", "/api/device-targets") }
@@ -168,7 +200,7 @@ class WakeWordService : Service() {
                         catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { null }
                     if (!current() || fresh == null || !WakeConversationAccess.allowed(fresh, saved.deviceId)) {
-                        voice?.stop(); conversation?.cancel(); break
+                        loop?.cancelFollowUp(); followUpIdentity = null; voice?.stop(); conversation?.cancel(); break
                     }
                 }
             }
@@ -178,28 +210,45 @@ class WakeWordService : Service() {
         catch (error: Exception) { if (current()) say(error.message ?: "Could not confirm the other-device request. Check its target before retrying.") }
         finally { accessWatch?.cancel() }
     }
+    private suspend fun localReply(command: String, text: String) {
+        val saved = PairingVault(this).load()
+        val selected = LocalChatHistory.scope(saved)
+        val blocked = getSharedPreferences("local_chat_access", MODE_PRIVATE).getBoolean(selected, false)
+        val localScope = if (blocked) LocalChatHistory.scope(null) else selected
+        val history = LocalChatHistory(java.io.File(noBackupFilesDir, "local-chat-history"))
+        // Local originals stay on this device and are never included in host requests.
+        try { withContext(Dispatchers.IO) {
+            for ((role, content) in listOf("user" to command, "assistant" to text)) history.append(localScope,
+                JSONObject().put("id", java.util.UUID.randomUUID().toString()).put("role", role).put("content", content).put("createdAt", java.time.Instant.now().toString()))
+        } } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { status = "Could not save this local voice exchange"; android.util.Log.w("NakamaLocalHistory", "Could not save a local voice exchange; existing originals were retained.") }
+        say(text)
+    }
     private suspend fun say(text: String) {
         val output = voice ?: return
         withTimeoutOrNull(10_000) { while (!output.ready && output.engineStatus.startsWith("Loading")) delay(100) }
-        if (!running || stopped || !unlocked || (activeIdentity != null && PairingVault(this).load() != activeIdentity)) return
+        if (!running || stopped || (activeIdentity != null && PairingVault(this).load() != activeIdentity)) return
         if (!output.ready) { status = "Unavailable · add an offline British English voice in Nakama Settings"; handoff(); return }
         output.speak(text)
-        awaitWakeReply(output, { running && !stopped && unlocked })
+        val session = output.session
+        awaitWakeReply(output, { running && !stopped })
+        if (running && !stopped && output.session == session && output.activityStatus == "Ready") allowFollowUp()
     }
     private suspend fun syncAlarms(saved: HostIdentity, snapshot: JSONObject, current: () -> Boolean) {
         val permitted = snapshot.objects("devices").firstOrNull { it.optString("id") == saved.deviceId }?.optJSONObject("permissions")?.opt("projectAccess") != false
         if (!permitted) { PhoneAlarmScheduler.clear(this); alarmRevision = null; return }
         val routines = snapshot.optJSONObject("routineBoard")?.objects("routines").orEmpty()
-        val revision = routines.joinToString("|") { it.optString("id") + ":" + it.optString("updatedAt") }
+        val revision = PhoneAlarmScheduler.revision(this, routines)
         if (!PhoneAlarmScheduler.enabled(this, saved.deviceId) || revision == alarmRevision) return
-        alarmRevision = revision
+        HostAlarmSounds.sync(this, saved, snapshot, current)
+        if (!current()) { PhoneAlarmScheduler.clear(this); return }
         val receipts = PhoneAlarmScheduler.sync(this, saved.deviceId, routines)
         for (receipt in receipts) {
             if (!current()) { PhoneAlarmScheduler.clear(this); return }
             val id = receipt.getString("routineId"); receipt.remove("routineId")
             withContext(Dispatchers.IO) { HostClient(saved).request("POST", "/api/routines/$id/device-status", receipt) }
-            if (receipt.optString("status") in listOf("permission_required", "failed") && routines.any { it.optString("id") == id && DeviceDelivery.addressedTo(it, saved.deviceId) }) { say(receipt.optString("detail")); handoff() }
         }
+        if (current()) alarmRevision = revision
     }
     private fun handoff(command: String? = null, page: String? = null): Boolean {
         if (!running || stopped) return false
@@ -212,6 +261,8 @@ class WakeWordService : Service() {
     }
     override fun onDestroy() {
         val previous = status; stopped = true; loop?.stop(); loop = null; scope.cancel(); voice?.close(); voice = null; VoiceAudioGate.set(this, false); running = false
+        runCatching { cpuLock?.let { if (it.isHeld) it.release() } }; cpuLock = null
+        VoiceOutputBus.onStop = null; VoiceOutputBus.onFollowUp = null; VoiceAudioGate.onBusy = null
         continueReplies = null; stopReply = null; discardWorkflow = null; continuations.clear()
         MoteWorkSignals.setVoiceState("wake", MoteVoiceState.IDLE)
         getSystemService(NotificationManager::class.java).cancel(74)

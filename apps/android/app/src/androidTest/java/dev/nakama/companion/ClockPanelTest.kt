@@ -6,6 +6,11 @@ import android.os.Build
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.MaterialTheme
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,6 +39,8 @@ class ClockPanelTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun emulatorOnly() { check(Build.HARDWARE == "ranchu" && Build.FINGERPRINT.startsWith("Android/sdk_")) { "Disposable Android emulator only." } }
     private fun nodes(): List<AccessibilityNodeInfo> {
+        // Scrolling can leave descendants at their prior bounds in UiAutomation's node cache.
+        instrumentation.uiAutomation.clearCache()
         val queue = ArrayDeque<AccessibilityNodeInfo>(); val found = mutableListOf<AccessibilityNodeInfo>()
         instrumentation.uiAutomation.rootInActiveWindow?.let(queue::add)
         while (queue.isNotEmpty() && found.size < 500) {
@@ -62,8 +69,8 @@ class ClockPanelTest {
         }
         fun scroll(action: Int): Boolean {
             val scrollable = nodes().firstOrNull { node ->
-                node.isScrollable && node.actionList.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id }
-            } ?: nodes().firstOrNull { it.isScrollable }
+                node.isScrollable && node.actionList.any { it.id in setOf(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id, AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id) }
+            } ?: nodes().firstOrNull { node -> node.isScrollable && node.actionList.none { it.id in setOf(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.id, AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id) } }
             val moved = scrollable?.performAction(action) == true
             SystemClock.sleep(180)
             instrumentation.waitForIdleSync()
@@ -86,7 +93,10 @@ class ClockPanelTest {
         val engine = LocalTimerEngine(store, effects, { now }, { "fixture-timer" })
         val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
         try {
-            instrumentation.runOnMainSync { activity.setContent { MaterialTheme { ClockPanel({ fail("No permission action expected") }, engine, { now }) } } }
+            val fixtureInsets = activity.window.decorView.rootWindowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            val fixtureDensity = activity.resources.displayMetrics.density
+            // Match the production Scaffold safe viewport when replacing its composition.
+            instrumentation.runOnMainSync { activity.setContent { MaterialTheme { Box(Modifier.fillMaxSize().padding(top = (fixtureInsets.top / fixtureDensity).dp, bottom = (fixtureInsets.bottom / fixtureDensity).dp)) { ClockPanel({ fail("No permission action expected") }, engine, { now }) } } } }
             await("Clock did not load") { nodes().any { it.text?.toString() == "This phone · works offline" } }
             reveal("Start phone timer")
             button("Start phone timer")!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)

@@ -13,7 +13,8 @@ class WakeConversationTest {
     @Test fun backgroundRequestSubmitsOnceAndSpeaksOnlyItsReceiptBoundAnswer() = runBlocking {
         val spoken = mutableListOf<String>(); var posts = 0; var reads = 0
         val runner = WakeConversation("fixture-phone", { method, path, body ->
-            if (method == "POST") {
+            if (path == "/api/chats/receipts") JSONObject().put("messages", org.json.JSONArray())
+            else if (method == "POST") {
                 assertEquals("/api/chat", path); assertEquals("auto", body!!.getString("routing")); assertFalse(body.has("providerId")); posts++
                 JSONObject("""{"deliveryDeviceId":"fixture-phone","taskIds":["own-task"],"reply":"Working on your recipe"}""")
             } else {
@@ -26,11 +27,11 @@ class WakeConversationTest {
     }
     @Test fun acceptedForegroundReceiptContinuesWithoutSubmittingAgain() = runBlocking {
         val spoken = mutableListOf<String>(); val methods = mutableListOf<String>()
-        WakeConversation("fixture-phone", { method, _, _ ->
-            methods += method
+        WakeConversation("fixture-phone", { method, path, _ ->
+            methods += path
             state(messages = """[{"id":"reply","role":"assistant","taskId":"accepted","content":"Your existing request is finished."}]""")
         }, { true }, { spoken += it }, {}, pause = {}).follow(JSONObject("""{"deliveryDeviceId":"fixture-phone","taskIds":["accepted"]}"""))
-        assertTrue(methods.all { it == "GET" }); assertEquals(listOf("Your existing request is finished."), spoken)
+        assertTrue(methods.none { it == "/api/chat" }); assertEquals(listOf("Your existing request is finished."), spoken)
     }
     @Test fun revokedAccessAfterSubmissionSuppressesImmediateAndDelayedSpeech() = runBlocking {
         var posted = false; val spoken = mutableListOf<String>()
@@ -65,7 +66,7 @@ class WakeConversationTest {
     @Test fun foregroundQuestionAlreadySpokenIsNotReplayedByReceiptHandoff() = runBlocking {
         val snapshot = state(messages = """[{"id":"question","role":"assistant","workflowId":"workflow","kind":"project_questions","content":"ALREADY SPOKEN"}]""").put("projectWorkflows", org.json.JSONArray("""[{"id":"workflow","deliveryDeviceId":"fixture-phone","status":"awaiting_answers"}]"""))
         val spoken = mutableListOf<String>()
-        WakeConversation("fixture-phone", { method, _, _ -> assertEquals("GET", method); snapshot }, { true }, { spoken += it }, {}, pause = {})
+        WakeConversation("fixture-phone", { _, path, _ -> assertTrue(path == "/api/state" || path == "/api/chats/receipts"); snapshot }, { true }, { spoken += it }, {}, pause = {})
             .follow(JSONObject("""{"deliveryDeviceId":"fixture-phone","workflowId":"workflow","spokenMessageIds":["question"]}"""))
         assertTrue(spoken.isEmpty())
     }
@@ -78,6 +79,36 @@ class WakeConversationTest {
         }, { true }, { spoken += it }, {}, pause = {})
         try { runner.run("An ordinary conversation"); fail("Shared access removal must stop ordinary speech") } catch (_: IllegalStateException) { }
         assertTrue(posted); assertTrue(spoken.isEmpty())
+    }
+
+    @Test fun alarmFeedbackRequiresTheOwnCurrentReceiptAndIsNotReplayedFromState() = runBlocking {
+        val spoken = mutableListOf<String>(); var feedbackCalls = 0
+        val runner = WakeConversation("fixture-phone", { _, _, _ -> state() }, { true }, { spoken += it }, {}, pause = {}, receiptFeedback = { _, _ -> feedbackCalls++; "This device registered the alarm." })
+        runner.follow(JSONObject("""{"deliveryDeviceId":"other-phone","reply":"foreign"}"""))
+        assertEquals(0, feedbackCalls); assertTrue(spoken.isEmpty())
+        runner.follow(JSONObject("""{"deliveryDeviceId":"fixture-phone","reply":"Saved on the PC."}"""))
+        assertEquals(1, feedbackCalls); assertEquals(listOf("Saved on the PC. This device registered the alarm."), spoken)
+    }
+
+    @Test fun completedArchivedReplyIsReadByAcceptedReceiptAndAccessCheckedAgain() = runBlocking {
+        var allowed = true
+        val spoken = mutableListOf<String>()
+        val paths = mutableListOf<String>()
+        val archived = JSONObject("""{"messages":[{"id":"archived-final","deliveryDeviceId":"fixture-phone","role":"assistant","taskId":"finished-task","content":"Your task is done."},{"id":"foreign","deliveryDeviceId":"another-phone","role":"assistant","taskId":"finished-task","content":"MUST NOT SPEAK"}]}""")
+        val runner = WakeConversation("fixture-phone", { _, path, body ->
+            paths += path
+            if (path == "/api/chats/receipts") { assertEquals("finished-task", body!!.getJSONArray("taskIds").getString(0)); archived }
+            else state(allowed, tasks = """[{"id":"finished-task","status":"completed"}]""")
+        }, { true }, { spoken += it }, {}, pause = {})
+        runner.follow(JSONObject("""{"deliveryDeviceId":"fixture-phone","taskIds":["finished-task"]}"""))
+        assertEquals(listOf("Your task is done."), spoken)
+        assertTrue(paths.none { it == "/api/chat" })
+        spoken.clear()
+        val revoked = WakeConversation("fixture-phone", { _, path, _ ->
+            if (path == "/api/chats/receipts") { allowed = false; archived } else state(allowed)
+        }, { true }, { spoken += it }, {}, pause = {})
+        try { revoked.follow(JSONObject("""{"deliveryDeviceId":"fixture-phone","taskIds":["finished-task"]}""")); fail("Revoked archive access must prevent speech") } catch (_: IllegalStateException) { }
+        assertTrue(spoken.isEmpty())
     }
 
 }

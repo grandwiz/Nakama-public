@@ -86,7 +86,7 @@ New automatic companion workflow. Choose your team once in Settings. Talk normal
 
 - [ ] **USE-01 - Usage on PC and Android [PARTIAL]:** Open AI usage to see ChatGPT and Claude, checked time, remaining allowance where reported and reset times.
 - [ ] **USE-02 - ChatGPT account limits [READY]:** Read official account quota windows; distinguish session and weekly limits, and display unavailable data honestly.
-- [ ] **USE-03 - Claude account limits [LATER]:** Display remaining account allowance when a supported integration exists; current builds show unavailable guidance.
+- [ ] **USE-03 - Claude account limits [READY]:** In build 8, read recognized subscription quota windows without inference; when sign-in needs repair, open the official /usage handoff on the PC and refresh. Unknown fields remain unavailable. See [Claude usage](claude-usage.md).
 - [ ] **USE-04 - No invented allowance [READY]:** Never present missing, failed or expired quota data as 100% remaining; refreshing does not send a model prompt.
 
 Review note: READY means implemented and ready for your test, not accepted. A real ChatGPT-to-Claude build and physical voice/overlay checks still need your validation.

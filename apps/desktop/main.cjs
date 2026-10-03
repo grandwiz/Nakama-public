@@ -123,6 +123,7 @@ app
       session,
       BrowserWindow,
     });
+    const alarmSoundDecoder = require("./alarm-audio.cjs").createAlarmAudioDecoder({ BrowserWindow, session });
     host = await new NakamaHost({
       dataDir,
       vault,
@@ -132,6 +133,7 @@ app
       reportAdapter,
       monitorAdapter,
       maintenanceAdapter,
+      alarmSoundDecoder,
     }).init();
     try {
       await host.listen(smokeTest ? { port: 0 } : {});

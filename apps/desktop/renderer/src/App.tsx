@@ -1,3 +1,4 @@
+import { LocalProjectImport } from "./project-imports";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -876,6 +877,7 @@ export function ProjectCard({ project }: { project: Project }) {
   );
 }
 function Projects({ query }: { query: string }) {
+  const [localImportOpen, setLocalImportOpen] = useState(false);
   const { state, createProject } = useNakama();
   const [importOpen, setImportOpen] = useState(false);
   const filtered = [...state.projects]
@@ -900,6 +902,7 @@ function Projects({ query }: { query: string }) {
             >
               Import from GitHub
             </Button>
+            <Button kind="secondary" disabled={previewMode} onClick={() => setLocalImportOpen(true)}>Import existing folder</Button>
             <Button onClick={createProject}>
               <Plus size={17} />
               New project
@@ -915,6 +918,7 @@ function Projects({ query }: { query: string }) {
           {query ? `Results for “${query}”` : "Sorted by recent activity"}
         </span>
       </div>
+      {localImportOpen && <LocalProjectImport onClose={() => setLocalImportOpen(false)} />}
       {importOpen && <GitHubImport onClose={() => setImportOpen(false)} />}
       {filtered.length ? (
         <div className="project-grid">

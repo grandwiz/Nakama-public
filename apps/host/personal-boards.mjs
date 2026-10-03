@@ -138,13 +138,28 @@ function parts(date, zone) {
   );
 }
 function nominal(parts) {
-  return Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour || 0,
-    parts.minute || 0,
-  );
+  const value = new Date(0);
+  value.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  value.setUTCHours(parts.hour || 0, parts.minute || 0, 0, 0);
+  return value.getTime();
+}
+function validateRoutineTime(time) {
+  if (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
+    throw new ApiError(400, "Routine time must use HH:mm, for example 07:30.");
+}
+function validateRoutineZone(zone) {
+  if (typeof zone !== "string" || !zone || zone.length > 100)
+    throw new ApiError(400, "Choose an IANA time zone.");
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: zone }).format();
+  } catch {
+    throw new ApiError(400, "Choose a supported IANA time zone.");
+  }
+}
+function validScheduledDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000-")) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 export function zonedOccurrence(day, time, zone) {
   const [year, month, date] = day.split("-").map(Number),
@@ -167,10 +182,34 @@ export function zonedOccurrence(day, time, zone) {
     ? new Date(Math.min(...candidates)).toISOString()
     : null;
 }
+// A plain alarm means the next occurrence of its local time, not a daily repeat.
+export function nextScheduledDate(time, timeZone = hostTimeZone(), date = new Date()) {
+  validateRoutineTime(time);
+  validateRoutineZone(timeZone);
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime()))
+    throw new ApiError(400, "Choose a valid schedule reference time.");
+  const local = parts(date, timeZone),
+    localDay = nominal({ ...local, hour: 0, minute: 0 });
+  // A skipped daylight-saving time or date must not silently become another time.
+  for (let forward = 0; forward < 8; forward++) {
+    const day = new Date(localDay + forward * 86400000).toISOString().slice(0, 10),
+      when = zonedOccurrence(day, time, timeZone);
+    if (when && Date.parse(when) > date.getTime()) return day;
+  }
+  throw new ApiError(400, "No valid next alarm time was found in this time zone.");
+}
 export function latestDueOccurrence(routine, date = new Date()) {
   if (!routine.enabled) return null;
+  const due = (when) => when &&
+    Date.parse(when) <= date.getTime() &&
+    Date.parse(when) >= Date.parse(routine.scheduleUpdatedAt || routine.createdAt) &&
+    (!routine.lastScheduledFor || Date.parse(when) > Date.parse(routine.lastScheduledFor));
+  if (routine.scheduledDate) {
+    const when = zonedOccurrence(routine.scheduledDate, routine.time, routine.timeZone);
+    return due(when) ? when : null;
+  }
   const local = parts(date, routine.timeZone),
-    localDay = Date.UTC(local.year, local.month - 1, local.day);
+    localDay = nominal({ ...local, hour: 0, minute: 0 });
   for (let back = 0; back < 8; back++) {
     const day = new Date(localDay - back * 86400000);
     if (!routine.weekdays.includes(day.getUTCDay())) continue;
@@ -179,15 +218,7 @@ export function latestDueOccurrence(routine, date = new Date()) {
       routine.time,
       routine.timeZone,
     );
-    if (
-      when &&
-      Date.parse(when) <= date.getTime() &&
-      Date.parse(when) >=
-        Date.parse(routine.scheduleUpdatedAt || routine.createdAt) &&
-      (!routine.lastScheduledFor ||
-        Date.parse(when) > Date.parse(routine.lastScheduledFor))
-    )
-      return when;
+    if (due(when)) return when;
   }
   return null;
 }
@@ -220,34 +251,36 @@ export function validateRoutine(body, current, state, principal) {
     "kind",
     "time",
     "timeZone",
+    "scheduledDate",
+    "soundId",
     "weekdays",
     "enabled",
     "targetDeviceId",
     "targetDeviceIds",
     "requestId",
+    "expectedUpdatedAt",
   ]);
+  if (body.expectedUpdatedAt !== undefined && (!current || body.expectedUpdatedAt !== current.updatedAt)) throw new ApiError(409, "The alarm changed. Refresh before editing it.");
   const value = { ...current, ...body };
   delete value.requestId;
+  delete value.expectedUpdatedAt;
   value.title = text(value.title, "Routine title", 200);
   value.details = details(value.details);
   if (!["reminder", "alarm"].includes(value.kind))
     throw new ApiError(400, "Choose a reminder or requested Android alarm.");
-  if (
-    typeof value.time !== "string" ||
-    !/^([01]\d|2[0-3]):[0-5]\d$/.test(value.time)
-  )
-    throw new ApiError(400, "Routine time must use HH:mm, for example 07:30.");
-  value.timeZone ||= hostTimeZone();
-  if (typeof value.timeZone !== "string" || value.timeZone.length > 100)
-    throw new ApiError(400, "Choose an IANA time zone.");
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: value.timeZone }).format();
-  } catch {
-    throw new ApiError(400, "Choose a supported IANA time zone.");
+  validateRoutineTime(value.time);
+  if (value.timeZone === undefined) value.timeZone = hostTimeZone();
+  validateRoutineZone(value.timeZone);
+  if (value.scheduledDate !== undefined && value.scheduledDate !== null) {
+    if (!validScheduledDate(value.scheduledDate))
+      throw new ApiError(400, "Scheduled date must be a real calendar date in YYYY-MM-DD format.");
+    if (!zonedOccurrence(value.scheduledDate, value.time, value.timeZone))
+      throw new ApiError(400, "That local time does not exist on the scheduled date in this time zone.");
+    if (value.weekdays === undefined) value.weekdays = [];
   }
   if (
     !Array.isArray(value.weekdays) ||
-    !value.weekdays.length ||
+    (!value.scheduledDate && !value.weekdays.length) ||
     value.weekdays.length > 7 ||
     value.weekdays.some(
       (day) => !Number.isInteger(day) || day < 0 || day > 6,
@@ -268,6 +301,11 @@ export function validateRoutine(body, current, state, principal) {
   if (!Array.isArray(targets) || !targets.length || targets.length > 10 || targets.some((id) => typeof id !== "string" || !id) || new Set(targets).size !== targets.length)
     throw new ApiError(400, "Select one to ten unique devices for this schedule.");
   targets = targets.map((id) => resolveDeviceTarget(state, principal, { targetDeviceId: id }, { desktop: value.kind !== "alarm", connected: false }).id);
+  if (value.soundId !== undefined && value.soundId !== null) {
+    const sound = (state.alarmSoundLibrary || []).find(row => row.id === value.soundId);
+    const owned = principal.kind === "owner" || sound?.origin === originId(principal) || state.routineBoard.routines.some(row => row.soundId === value.soundId && routineTargets(row).includes(principal.id));
+    if (value.kind !== "alarm" || !sound || !owned) throw new ApiError(403, "Choose an available alarm sound owned by this device or already assigned to it.");
+  }
   value.targetDeviceIds = targets;
   value.targetDeviceId = targets.length === 1 ? targets[0] : null;
   return value;
@@ -540,6 +578,8 @@ export class PersonalBoards {
             "kind",
             "time",
             "timeZone",
+            "scheduledDate",
+            "soundId",
             "weekdays",
             "enabled",
             "targetDeviceId",

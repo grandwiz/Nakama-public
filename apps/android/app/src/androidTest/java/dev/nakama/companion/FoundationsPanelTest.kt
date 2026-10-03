@@ -73,7 +73,7 @@ class FoundationsPanelTest {
         val activity = activity()
         val state = mutableStateOf(JSONObject("""{"taskBoard":{"items":[{"id":"card","title":"Synthetic task","details":"No live action","sourceKind":"manual","completed":false}]},"routineBoard":{"routines":[],"occurrences":[]}}"""))
         val page = mutableStateOf("Tasks"); val allowed = mutableStateOf(true)
-        val calls = mutableListOf<Pair<String, JSONObject?>>()
+        val calls = java.util.concurrent.CopyOnWriteArrayList<Pair<String, JSONObject?>>()
         try {
             instrumentation.runOnMainSync { activity.setContent { MaterialTheme { Box(Modifier.safeDrawingPadding()) { FoundationsPanel(page.value, { page.value = it }, state.value, "fixture-phone", allowed.value, { method, path, body ->
                 calls += "$method $path" to body
@@ -107,7 +107,7 @@ class FoundationsPanelTest {
         val activity = activity()
         val snapshot = JSONObject("""{"routineBoard":{"routines":[{"id":"fixture-alarm","title":"Synthetic alarm","kind":"alarm","time":"09:00","timeZone":"Europe/London","weekdays":[1,2,3,4,5],"enabled":true,"targetDeviceId":"fixture-phone","targetDeviceIds":["fixture-phone","fixture-tablet"]}],"occurrences":[]}}""")
         val directory = JSONObject("""{"sourceDeviceId":"fixture-phone","devices":[{"id":"fixture-phone","name":"Fixture Phone","platform":"android","connected":true},{"id":"fixture-tablet","name":"Fixture Tablet","platform":"android","connected":true},{"id":"desktop","name":"Fixture PC","platform":"desktop","connected":true}]}""")
-        val calls = mutableListOf<Pair<String, JSONObject?>>()
+        val calls = java.util.concurrent.CopyOnWriteArrayList<Pair<String, JSONObject?>>()
         try {
             instrumentation.runOnMainSync { activity.setContent { MaterialTheme { Box(Modifier.safeDrawingPadding()) {
                 FoundationsPanel("Routines", {}, snapshot, "fixture-phone", true, { method, path, body ->
@@ -133,7 +133,7 @@ class FoundationsPanelTest {
         Canvas(image).apply { drawColor(Color.rgb(20, 40, 80)); drawText("SYNTHETIC PC FRAME", 80f, 220f, Paint().apply { color = Color.WHITE; textSize = 52f }) }
         val bytes = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray(); image.recycle()
         val data = "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-        val calls = mutableListOf<Pair<String, JSONObject?>>()
+        val calls = java.util.concurrent.CopyOnWriteArrayList<Pair<String, JSONObject?>>()
         val expires = Instant.now().plusSeconds(120).toString()
         var counter = 0
         val voice = mutableStateOf(0L to "")
@@ -166,7 +166,7 @@ class FoundationsPanelTest {
             instrumentation.runOnMainSync { activity.setContent { MaterialTheme { Box(Modifier.safeDrawingPadding()) {
                 FoundationsPanel("Wake word", {}, JSONObject(), "fixture-phone", false, { _, _, _ -> fail("Wake setup must not contact the host"); JSONObject() }, {}, actions::add, 0L to "", {})
             } } } }
-            await("Bundled wake model explanation missing") { nodes().any { it.text?.toString()?.contains("No Android speech model download or Google recognition service is required") == true } }
+            await("Bundled wake model explanation missing") { nodes().any { it.text?.toString() == LocalSpeechStatus.detail } }
             assertFalse(nodes().any { it.text?.toString() == "Download local English model" })
             assertFalse(nodes().any { it.text?.toString() == "Android Voice input settings" })
             await("Wake enable control missing") {

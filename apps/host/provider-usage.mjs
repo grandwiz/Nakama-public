@@ -1,3 +1,4 @@
+import { readClaudeUsage } from "./claude-usage.mjs";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import { CodexRpc } from "./codex-rpc.mjs";
@@ -203,17 +204,21 @@ export function createProviderUsageReader({
   now = Date.now,
   cacheMs = 30000,
   readCodex = readCodexUsage,
+  readClaude = readClaudeUsage,
 } = {}) {
   let cached;
   let inflight;
   return {
     async read(providers = []) {
       const provider = providers.find((item) => item.id === "codex");
-      const key = JSON.stringify([
-        provider?.executablePath,
-        provider?.connectionType,
-        provider?.status,
-      ]);
+      const claudeProvider = providers.find((item) => item.id === "claude");
+      const key = JSON.stringify(
+        [provider, claudeProvider].map((item) => [
+          item?.executablePath,
+          item?.connectionType,
+          item?.status,
+        ]),
+      );
       const time = now();
       if (
         cached?.key === key &&
@@ -226,26 +231,22 @@ export function createProviderUsageReader({
         return this.read(providers);
       }
       inflight = (async () => {
-        let codex;
-        try {
-          codex = await readCodex(provider, { now });
-        } catch {
-          codex = record(
-            "codex",
-            "error",
-            "Could not refresh Codex allowances. Try again later.",
-            new Date(now()).toISOString(),
-          );
-        }
+        const results = await Promise.allSettled([
+          readCodex(provider, { now }),
+          readClaude(claudeProvider, { now }),
+        ]);
+        const allowances = results.map((result, index) =>
+          result.status === "fulfilled"
+            ? result.value
+            : record(
+                index === 0 ? "codex" : "claude",
+                "error",
+                "Could not refresh provider allowances. Try again later.",
+                new Date(now()).toISOString(),
+              ),
+        );
         const value = {
-          providers: [
-            codex,
-            record(
-              "claude",
-              "unavailable",
-              "Nakama cannot read Claude subscription percentages through a supported read-only interface yet. In Claude Code, type /usage to see your remaining allowance.",
-            ),
-          ],
+          providers: allowances,
           checkedAt: new Date(now()).toISOString(),
         };
         cached = { key, at: now(), value };

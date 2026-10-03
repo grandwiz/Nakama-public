@@ -26,10 +26,8 @@ object PhoneCommandParser {
         Regex("^(?:message|text)\\s+([^:]+):\\s*(.+)$", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).matchEntire(text)?.let {
             if (it.groupValues[1].length <= 100 && it.groupValues[2].length <= 10000) return Message(it.groupValues[1].trim(), it.groupValues[2].trim(), false)
         }
-        Regex("^open\\s+(whatsapp|discord|gmail|calendar|chrome|youtube)[.!]?$", RegexOption.IGNORE_CASE).matchEntire(text)?.let {
-            val name = it.groupValues[1].lowercase()
-            val packages = mapOf("whatsapp" to "com.whatsapp", "discord" to "com.discord", "gmail" to "com.google.android.gm", "calendar" to "com.google.android.calendar", "chrome" to "com.android.chrome", "youtube" to "com.google.android.youtube")
-            return OpenApp(packages.getValue(name), name)
+        AppLaunchPolicy.parse(input)?.let { request ->
+            request.packageName?.let { return OpenApp(it, request.label.lowercase()) }
         }
         return null
     }

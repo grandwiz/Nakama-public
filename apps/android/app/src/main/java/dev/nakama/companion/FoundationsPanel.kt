@@ -94,6 +94,8 @@ fun FoundationsPanel(
                     Surface(modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = tween(MotionPolicy.duration(motion, 220))), color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) { Column(Modifier.padding(12.dp)) {
                         Row { Column(Modifier.weight(1f)) { Text(routine.optString("title"), style = MaterialTheme.typography.titleSmall); Text("${routine.optString("kind")} · ${routine.optString("time")} · ${routine.optString("timeZone")}", style = MaterialTheme.typography.bodySmall) }; Switch(routine.optBoolean("enabled"), { mutate("PATCH", "/api/routines/${routine.optString("id")}", JSONObject().put("enabled", it)) }, enabled = !busy) }
                         if (routine.optString("details").isNotBlank()) Text(routine.optString("details"))
+                        state.objects("alarmSounds").firstOrNull { it.optString("id") == routine.alarmSoundId() }?.let { sound -> Text("Sound: ${sound.optString("name")}\n${sound.optString("license")} · ${sound.optString("attribution")}", style = MaterialTheme.typography.bodySmall) }
+                        routine.opt("scheduledDate").takeUnless { it == null || it == JSONObject.NULL }?.let { Text("One-time date: $it", style = MaterialTheme.typography.bodySmall) }
                         if (routine.optString("kind") == "alarm") {
                             DeviceDelivery.alarmTargets(routine).forEach { targetId ->
                                 val name = deviceDirectory.firstOrNull { it.id == targetId }?.name ?: if (targetId == deviceId) "This device" else "Unavailable target: $targetId"
@@ -123,15 +125,15 @@ fun FoundationsPanel(
             }
             else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item { Text("Say Nakama", style = MaterialTheme.typography.titleLarge); Text("${WakeWordService.status}") }
-                item { Text("Enable once, then say 'Hey Nakama' followed by your request. A bare 'Nakama' also works when recognised. When the bundled recognizer finishes your sentence it is submitted automatically and answered aloud, including while this app is in the background. Wake audio stays in Nakama's bundled offline recognizer; greetings, time, date and timer commands stay on this device, while other completed requests go to your paired PC under its saved model roles and permissions. A persistent notification has Stop. Listening pauses during speech and while the phone is locked.", style = MaterialTheme.typography.bodySmall) }
-                item { Text("English speech recognition is included in this app. No Android speech model download or Google recognition service is required. First use prepares the model in private app storage.") }
+                item { Text("Enable once, then say Hey Nakama and your request. After each reply, follow up within 30 seconds without repeating the wake phrase. Say Nakama stop to interrupt speech or silence a ringing Nakama alarm.", style = MaterialTheme.typography.bodySmall) }
+                item { Text("Listening and spoken replies continue while locked. On-screen phone actions still need an unlocked device. Stop listening in the notification turns wake off.", style = MaterialTheme.typography.bodySmall) }
                 item { Text(LocalSpeechStatus.detail, style = MaterialTheme.typography.bodyMedium) }
-                item { Text("Wait for 'Microphone ready' before speaking. 'Starting' is not a listening confirmation. 'Nakama heard' confirms wake detection. Finish your request, then pause while Nakama transcribes it offline. Only a completed result sends the request.", style = MaterialTheme.typography.bodySmall) }
+                item { Text("Wait for Microphone ready before speaking. Starting is not ready. Requests send after completed recognition. Simple clock commands run here; other requests use your paired PC's roles and permissions.", style = MaterialTheme.typography.bodySmall) }
                 item { Button(onClick = { localAction("start_wake") }, enabled = !WakeWordService.running) { Text("Enable Nakama wake word") } }
                 item { OutlinedButton(onClick = { localAction("restart_wake") }) { Text("Restart wake listening") } }
                 item { OutlinedButton(onClick = { localAction("stop_wake") }, enabled = WakeWordService.running) { Text("Stop wake listening") } }
                 item { OutlinedButton(onClick = { localAction("wake_app_settings") }) { Text("Open Android app settings") } }
-                item { Text("For background listening, open Battery in Android app settings and choose Unrestricted if available. On Samsung, add Nakama to Never sleeping apps. Return here and restart listening. Keep the screen unlocked; the listening notification must remain visible.", style = MaterialTheme.typography.bodySmall) }
+                item { Text("For background listening, open Battery in Android app settings and choose Unrestricted if available. On Samsung, add Nakama to Never sleeping apps. Return here and restart listening. Start listening while Nakama is open. You can then lock the screen; the listening notification must remain visible.", style = MaterialTheme.typography.bodySmall) }
                 item { Text("Spoken replies use a separate installed offline British English text-to-speech voice. Set it up in Device → Your British English voice; the bundled recognition model does not change your selected voice.", style = MaterialTheme.typography.bodySmall) }
                 item { Text("Leave the listening notification enabled for background questions. Phone control and protected permissions can still need you to open Nakama; Mote attempts the foreground handoff when available. Wake mode uses one continuous local audio session without starting an Android recognition service repeatedly. If capture fails, it pauses and shows the reason. Nakama never mutes device or other app sounds. Continuous microphone use consumes battery. You can press Home or remove Nakama from Recents while its listening service remains active. Android may still stop it; force-stop and reboot need you to reopen Nakama. Your opt-in is remembered, and Stop disables it. Installation alone cannot enable an always-on microphone.", style = MaterialTheme.typography.bodySmall) }
                 item { Text("Try: 'Hey Nakama, show my tasks', 'open routines', 'connect remote desktop', 'switch monitor 2', 'start location sharing', or any ordinary task. Protected permissions still need your Android/PC controls.", style = MaterialTheme.typography.bodySmall) }
@@ -148,15 +150,29 @@ fun FoundationsPanel(
         var time by remember(routine) { mutableStateOf(routine.optString("time").ifBlank { "09:00" }) }; var kind by remember(routine) { mutableStateOf(routine.optString("kind").ifBlank { "reminder" }) }
         var targetIds by remember(routine) { mutableStateOf(DeviceDelivery.alarmTargets(routine).ifEmpty { if (routine.optString("id").isBlank() || routine.optString("kind") != "alarm") setOfNotNull(deviceId) else emptySet() }) }
         val deviceTargets = deviceDirectory.filter { it.platform == "android" }
+        var scheduledDate by remember(routine) { mutableStateOf(routine.opt("scheduledDate").takeUnless { it == null || it == JSONObject.NULL }?.toString().orEmpty()) }
+        var soundId by remember(routine) { mutableStateOf(routine.alarmSoundId()) }
         val weekdayArray = routine.optJSONArray("weekdays")
         var days by remember(routine) { mutableStateOf(if (weekdayArray == null) (0..6).toSet() else (0 until weekdayArray.length()).map { weekdayArray.optInt(it) }.toSet()) }
         AlertDialog(onDismissRequest = { editRoutine = null }, title = { Text("Routine") }, text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(title, { title = it.take(160) }, label = { Text("Title") }); OutlinedTextField(details, { details = it.take(3000) }, label = { Text("Details") }, maxLines = 2)
             OutlinedTextField(time, { time = it.take(5) }, label = { Text("Time · HH:mm") }, singleLine = true)
             Text(routine.optString("timeZone").ifBlank { ZoneId.systemDefault().id }, style = MaterialTheme.typography.bodySmall)
-            Row { listOf("reminder", "alarm").forEach { item -> FilterChip(selected = kind == item, onClick = { kind = item; if (item == "alarm") targetIds = targetIds.filterNot { id -> id == "desktop" || deviceDirectory.any { it.id == id && it.platform != "android" } }.toSet() }, label = { Text(item) }) } }
-            Row(Modifier.horizontalScroll(rememberScrollState())) { listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEachIndexed { index, day -> FilterChip(selected = index in days, onClick = { days = if (index in days) days - index else days + index }, label = { Text(day) }) } }
+            Row { listOf("reminder", "alarm").forEach { item -> FilterChip(selected = kind == item, onClick = { kind = item; if (item == "alarm" && routine.optString("id").isBlank() && scheduledDate.isBlank()) {
+                val zone = routine.optString("timeZone").ifBlank { ZoneId.systemDefault().id }
+                scheduledDate = FoundationPolicy.nextAlarm(time, (0..6).toSet(), zone, java.time.Instant.now())?.atZone(ZoneId.of(zone))?.toLocalDate()?.toString().orEmpty()
+            }; if (item == "alarm") targetIds = targetIds.filterNot { id -> id == "desktop" || deviceDirectory.any { it.id == id && it.platform != "android" } }.toSet() }, label = { Text(item) }) } }
+            OutlinedTextField(scheduledDate, { scheduledDate = it.take(10) }, label = { Text("One-time date - YYYY-MM-DD") }, supportingText = { Text("Leave blank to repeat on the selected weekdays.") }, singleLine = true)
+            if (scheduledDate.isBlank()) Row(Modifier.horizontalScroll(rememberScrollState())) { listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEachIndexed { index, day -> FilterChip(selected = index in days, onClick = { days = if (index in days) days - index else days + index }, label = { Text(day) }) } }
             if (kind == "alarm") {
+                Text("Alarm sound", style = MaterialTheme.typography.labelLarge)
+                Text("Ask Nakama to find a sound online, make a clip and use it for an alarm. The PC prepares the clip and this device verifies its download.", style = MaterialTheme.typography.bodySmall)
+                FilterChip(selected = soundId.isBlank(), onClick = { soundId = "" }, label = { Text("Android default alarm") })
+                state.objects("alarmSounds").forEach { sound ->
+                    FilterChip(selected = soundId == sound.optString("id"), onClick = { soundId = sound.optString("id") }, label = { Text(sound.optString("name").take(120)) })
+                    if (soundId == sound.optString("id")) Text(listOf(sound.optString("sourceTitle"), sound.optString("license"), sound.optString("attribution"), "Clipped and converted to mono WAV by Nakama", sound.optString("sourceUrl")).filter(String::isNotBlank).joinToString("\n"), style = MaterialTheme.typography.bodySmall)
+                }
+                if (soundId.isNotBlank() && state.objects("alarmSounds").none { it.optString("id") == soundId }) Text("Selected sound is unavailable. Reconnect to download it or choose another sound.", color = MaterialTheme.colorScheme.error)
                 Text("Ring on selected devices", style = MaterialTheme.typography.labelLarge)
                 Text("New alarms select only this device. Select more devices explicitly, then sync alarms on each target. Offline devices update after their next sync.", style = MaterialTheme.typography.bodySmall)
                 val choices = (deviceTargets + targetIds.filter { id -> deviceTargets.none { it.id == id } && id != "desktop" && deviceDirectory.none { it.id == id && it.platform != "android" } }.map { id -> DeviceTarget(id, if (id == deviceId) "This device" else "Unavailable target: $id", "unknown", false) }).distinctBy { it.id }
@@ -174,9 +190,9 @@ fun FoundationsPanel(
                 if (directoryError.isNotBlank()) Text(directoryError, color = MaterialTheme.colorScheme.error)
                 if (targetIds.isEmpty()) Text("Choose at least one device.", color = MaterialTheme.colorScheme.error)
             }
-        } }, confirmButton = { TextButton(enabled = title.isNotBlank() && days.isNotEmpty() && (kind != "alarm" || targetIds.size in 1..10) && time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) && !busy, onClick = {
+        } }, confirmButton = { TextButton(enabled = title.isNotBlank() && (if (scheduledDate.isBlank()) days.isNotEmpty() else scheduledDate.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")) && runCatching { java.time.LocalDate.parse(scheduledDate) }.isSuccess) && (kind != "alarm" || targetIds.size in 1..10) && time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) && !busy, onClick = {
             val id = routine.optString("id")
-            mutate(if (id.isBlank()) "POST" else "PATCH", "/api/routines" + if (id.isBlank()) "" else "/$id", JSONObject().put("title", title.trim()).put("details", details).put("kind", kind).put("time", time).put("timeZone", routine.optString("timeZone").ifBlank { ZoneId.systemDefault().id }).put("weekdays", JSONArray(days.sorted())).put("enabled", routine.optBoolean("enabled", true)).put("targetDeviceIds", JSONArray(targetIds.sorted()))); editRoutine = null
+            mutate(if (id.isBlank()) "POST" else "PATCH", "/api/routines" + if (id.isBlank()) "" else "/$id", JSONObject().put("title", title.trim()).put("details", details).put("kind", kind).put("time", time).put("timeZone", routine.optString("timeZone").ifBlank { ZoneId.systemDefault().id }).put("weekdays", JSONArray(days.sorted())).put("scheduledDate", scheduledDate.ifBlank { null } ?: JSONObject.NULL).put("enabled", routine.optBoolean("enabled", true)).put("targetDeviceIds", JSONArray(targetIds.sorted())).put("soundId", soundId.ifBlank { null } ?: JSONObject.NULL)); editRoutine = null
         }) { Text("Save routine") } }, dismissButton = { TextButton(onClick = { editRoutine = null }) { Text("Cancel") } })
     }
 }

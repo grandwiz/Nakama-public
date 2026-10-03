@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
+  ArrowDown,
   Bot,
   Check,
   Image,
@@ -34,6 +35,8 @@ import {
 } from "./ai-role-settings";
 import { ProjectWorkflowPanel } from "./project-workflow";
 import { navigationOutcome } from "./agent-office-model";
+import { MessageTimestamp, useChatTimeline } from "./chat-timeline";
+import { ChatHistoryControls } from "./chat-history";
 
 import {
   claudeModelChoices,
@@ -202,15 +205,15 @@ export function AssistantPage({
   draftRef.current = message;
   workflowDraftRef.current = workflowDraft;
   conversationRef.current = projectId;
-  const bottom = useRef<HTMLDivElement>(null);
   const provider = state.providers.find((item) => item.id === providerId);
   const roles = state.config.aiRoles || defaultAiRoles();
   const projectAvailable =
     !projectId || state.projects.some((project) => project.id === projectId);
   const hasDraft = Boolean(message.trim()) || workflowDraft;
   const messages = state.messages.filter(
-    (item) => (item.projectId || "") === projectId,
+    (item) => !item.deliveryOnly && (item.projectId || "") === projectId,
   );
+  const timeline = useChatTimeline(messages, projectId);
   const tasks = state.tasks.filter(
     (item) =>
       (item.projectId || "") === projectId &&
@@ -257,15 +260,11 @@ export function AssistantPage({
           "high",
     );
   }, [provider?.id, provider?.modelDetails, model]);
-  useEffect(() => {
-    const container = bottom.current?.parentElement;
-    if (container && messages.length)
-      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-  }, [messages.length]);
   const send = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim() || !projectAvailable || busy) return;
     const submittedMessage = message;
+    timeline.submitted(submittedMessage);
     setBusy(true);
     const result = await perform<{
       routing?: { reason: string };
@@ -286,6 +285,7 @@ export function AssistantPage({
         : { routing: "auto" }),
     });
     if (!mountedRef.current) return;
+    if (!result) timeline.failed();
     setBusy(false);
     if (conversationRef.current !== projectId) return;
     if (result) {
@@ -363,138 +363,159 @@ export function AssistantPage({
               ))}
             </select>
           </div>
-          <div className="chat-messages">
-            {projectId && (
-              <ProjectWorkflowPanel
-                key={projectId}
-                projectId={projectId}
-                onDraftChange={setWorkflowDraft}
-              />
-            )}
-            {!messages.length && (
-              <div className="chat-welcome">
-                <Mascot size={116} />
-                <h2>A thought, a task, a big idea?</h2>
-                <p>
-                  I’m here to help you make it happen.
-                  <br />
-                  Connect an AI account, then tell me what you have in mind.
-                </p>
-                <div className="prompt-grid">
-                  {[
-                    {
-                      icon: Wand2,
-                      title: "Build something",
-                      text: "Help me plan a new app. Ask about the problem it should solve.",
-                    },
-                    {
-                      icon: Bot,
-                      title: "Work as a team",
-                      text: "Review my project and suggest a plan for what to work on next.",
-                    },
-                    {
-                      icon: Image,
-                      title: "Explore an idea",
-                      text: "Help me write a detailed image-generation prompt for a creative project.",
-                    },
-                    {
-                      icon: MessageCircle,
-                      title: "Make a plan",
-                      text: "Help me organise my priorities for tomorrow.",
-                    },
-                  ].map((prompt) => (
-                    <button
-                      key={prompt.title}
-                      onClick={() => {
-                        if (
-                          hasDraft &&
-                          !window.confirm(
-                            "Replace your unsent assistant draft?",
+          <ChatHistoryControls projectId={projectId} />
+          <div className="chat-transcript">
+            <div
+              className="chat-messages"
+              ref={timeline.viewport}
+              onScroll={timeline.onScroll}
+              aria-label="Conversation messages"
+            >
+              {projectId && (
+                <ProjectWorkflowPanel
+                  key={projectId}
+                  projectId={projectId}
+                  onDraftChange={setWorkflowDraft}
+                />
+              )}
+              {!messages.length && (
+                <div className="chat-welcome">
+                  <Mascot size={116} />
+                  <h2>A thought, a task, a big idea?</h2>
+                  <p>
+                    I’m here to help you make it happen.
+                    <br />
+                    Connect an AI account, then tell me what you have in mind.
+                  </p>
+                  <div className="prompt-grid">
+                    {[
+                      {
+                        icon: Wand2,
+                        title: "Build something",
+                        text: "Help me plan a new app. Ask about the problem it should solve.",
+                      },
+                      {
+                        icon: Bot,
+                        title: "Work as a team",
+                        text: "Review my project and suggest a plan for what to work on next.",
+                      },
+                      {
+                        icon: Image,
+                        title: "Explore an idea",
+                        text: "Help me write a detailed image-generation prompt for a creative project.",
+                      },
+                      {
+                        icon: MessageCircle,
+                        title: "Make a plan",
+                        text: "Help me organise my priorities for tomorrow.",
+                      },
+                    ].map((prompt) => (
+                      <button
+                        key={prompt.title}
+                        onClick={() => {
+                          if (
+                            hasDraft &&
+                            !window.confirm(
+                              "Replace your unsent assistant draft?",
+                            )
                           )
-                        )
-                          return;
-                        setReview(undefined);
-                        setMessage(prompt.text);
-                      }}
-                    >
-                      <prompt.icon size={18} />
-                      <span>
-                        {prompt.title}
-                        <small>{prompt.text}</small>
-                      </span>
-                      <ArrowRight size={15} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {messages.map((item) => (
-              <article
-                className={`message ${item.role === "user" ? "user-message" : "assistant-message"}`}
-                key={item.id}
-              >
-                <span
-                  className={`message-avatar ${item.role === "user" ? "human" : ""}`}
-                >
-                  {item.role === "user" ? "You" : <Mascot size={34} />}
-                </span>
-                <div className="message-content">
-                  <div className="message-meta">
-                    <strong>
-                      {item.role === "user"
-                        ? "You"
-                        : item.role === "assistant"
-                          ? "Nakama"
-                          : item.role}
-                    </strong>
-                    <time>{relativeDate(item.createdAt)}</time>
+                            return;
+                          setReview(undefined);
+                          setMessage(prompt.text);
+                        }}
+                      >
+                        <prompt.icon size={18} />
+                        <span>
+                          {prompt.title}
+                          <small>{prompt.text}</small>
+                        </span>
+                        <ArrowRight size={15} />
+                      </button>
+                    ))}
                   </div>
-                  <div className="message-text">{item.content}</div>
-                  {locationLookup(item) && (
-                    <Button
-                      kind="secondary"
-                      onClick={() =>
-                        void openExternal(locationLookup(item)!).catch(() =>
-                          notify("Could not open this lookup.", true),
-                        )
-                      }
-                    >
-                      {item.localOutcome?.type === "weather_lookup"
-                        ? "Open weather lookup"
-                        : "Open map"}
-                      <ArrowRight size={14} />
-                    </Button>
-                  )}
                 </div>
-              </article>
-            ))}
-            {tasks.map((task) => (
-              <article className="running-message" key={task.id}>
-                <Bot size={19} />
-                <div>
-                  <strong>
-                    {state.providers.find((item) => item.id === task.providerId)
-                      ?.name || task.providerId}{" "}
-                    is working
-                  </strong>
-                  <p>{task.title}</p>
-                  {task.routingReason && (
-                    <p className="small-copy">{task.routingReason}</p>
-                  )}
-                  {task.output && <pre>{task.output.slice(-6000)}</pre>}
-                </div>
-                <Button
-                  kind="ghost"
-                  onClick={() =>
-                    void perform("POST", `/api/tasks/${task.id}/stop`)
-                  }
+              )}
+              {messages.map((item) => (
+                <article
+                  className={`message ${item.role === "user" ? "user-message" : "assistant-message"}`}
+                  key={item.id}
+                  data-message-id={item.id}
                 >
-                  <Square size={13} />
-                  Stop
-                </Button>
-              </article>
-            ))}
-            <div ref={bottom} />
+                  <span
+                    className={`message-avatar ${item.role === "user" ? "human" : ""}`}
+                  >
+                    {item.role === "user" ? "You" : <Mascot size={34} />}
+                  </span>
+                  <div className="message-content">
+                    <div className="message-meta">
+                      <strong>
+                        {item.role === "user"
+                          ? "You"
+                          : item.role === "assistant"
+                            ? "Nakama"
+                            : item.role}
+                      </strong>
+                      <time>{relativeDate(item.createdAt)}</time>
+                    </div>
+                    <MessageTimestamp message={item} />
+                    {locationLookup(item) && (
+                      <Button
+                        kind="secondary"
+                        onClick={() =>
+                          void openExternal(locationLookup(item)!).catch(() =>
+                            notify("Could not open this lookup.", true),
+                          )
+                        }
+                      >
+                        {item.localOutcome?.type === "weather_lookup"
+                          ? "Open weather lookup"
+                          : "Open map"}
+                        <ArrowRight size={14} />
+                      </Button>
+                    )}
+                  </div>
+                </article>
+              ))}
+              {tasks.map((task) => (
+                <article className="running-message" key={task.id}>
+                  <Bot size={19} />
+                  <div>
+                    <strong>
+                      {state.providers.find(
+                        (item) => item.id === task.providerId,
+                      )?.name || task.providerId}{" "}
+                      is working
+                    </strong>
+                    <p>{task.title}</p>
+                    {task.routingReason && (
+                      <p className="small-copy">{task.routingReason}</p>
+                    )}
+                    {task.output && <pre>{task.output.slice(-6000)}</pre>}
+                  </div>
+                  <Button
+                    kind="ghost"
+                    onClick={() =>
+                      void perform("POST", `/api/tasks/${task.id}/stop`)
+                    }
+                  >
+                    <Square size={13} />
+                    Stop
+                  </Button>
+                </article>
+              ))}
+            </div>
+            {timeline.away && (
+              <button
+                type="button"
+                className="chat-latest"
+                onClick={timeline.latest}
+              >
+                <ArrowDown size={16} />
+                {timeline.unread
+                  ? `Latest · ${timeline.unread} unread`
+                  : "Latest message"}
+              </button>
+            )}
           </div>
           <form
             className="chat-composer"

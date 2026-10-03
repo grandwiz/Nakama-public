@@ -25,6 +25,7 @@ const files = [
         name.startsWith("remote-") ||
         name.startsWith("browser-") ||
         name.startsWith("self-maintenance") ||
+        name === "alarm-audio.cjs" ||
         name === "desktop-attention.cjs" ||
         name === "project-reports.cjs",
     )

@@ -38,6 +38,21 @@ export function UsagePanel() {
   const [snapshot, setSnapshot] = useState<UsageSnapshot>();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [openingClaude, setOpeningClaude] = useState(false);
+  const [repairDetail, setRepairDetail] = useState("");
+  const openClaude = async () => {
+    setOpeningClaude(true);
+    try {
+      const result = await perform<{ opened: boolean; detail: string }>(
+        "POST",
+        "/api/providers/claude/usage-terminal",
+        {},
+      );
+      if (result) setRepairDetail(result.detail);
+    } finally {
+      setOpeningClaude(false);
+    }
+  };
   const refresh = async () => {
     setBusy(true);
     setFailed(false);
@@ -149,6 +164,23 @@ export function UsagePanel() {
                   </div>
                 )}
                 <p className="usage-detail">{provider.detail}</p>
+                {provider.id === "claude" &&
+                  provider.status !== "available" && (
+                    <div>
+                      <Button
+                        kind="secondary"
+                        busy={openingClaude}
+                        onClick={() => void openClaude()}
+                      >
+                        Open Claude /usage on this PC
+                      </Button>
+                      <p className="usage-detail">
+                        A separate official Claude terminal can refresh its
+                        sign-in. Return here and refresh usage afterward.
+                      </p>
+                      {repairDetail && <p role="status">{repairDetail}</p>}
+                    </div>
+                  )}
                 <div className="usage-card-footer">
                   <small>
                     {provider.checkedAt
@@ -180,7 +212,7 @@ export function UsagePanel() {
                 <p className="usage-detail">
                   {index === 0
                     ? "Read the account allowances reported by your signed-in Codex CLI."
-                    : "Claude percentages are not imported yet. Type /usage in Claude Code to check them."}
+                    : "Read the subscription allowances used by Claude Code /usage without submitting a model prompt."}
                 </p>
               </article>
             ))}

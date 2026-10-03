@@ -33,7 +33,7 @@ export function officeForest(
     const visited = new Set<string>();
     while (cursor && !visited.has(cursor.id)) {
       visited.add(cursor.id);
-      visible.add(cursor.id);
+      if (history || officeIsCurrent(cursor)) visible.add(cursor.id);
       cursor = cursor.parentId ? unique.get(cursor.parentId) : undefined;
     }
   }

@@ -16,6 +16,9 @@ export interface TaskBoard {
   items: BoardItem[];
   lastCleanupDate?: string;
 }
+export interface AlarmSound {
+  id: string; name: string; sourceTitle: string; sourceUrl: string; license: string; attribution: string; durationMs: number;
+}
 export interface Routine {
   id: string;
   title: string;
@@ -23,6 +26,8 @@ export interface Routine {
   kind: "reminder" | "alarm";
   time: string;
   timeZone: string;
+  scheduledDate?: string | null;
+  soundId?: string | null;
   weekdays: number[];
   enabled: boolean;
   targetDeviceId?: string;

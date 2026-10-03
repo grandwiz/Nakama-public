@@ -23,20 +23,26 @@ internal object BundledNativeDecoders {
             sileroVadModelConfig = SileroVadModelConfig(model = file(directory, "silero_vad.onnx")),
             sampleRate = 16_000, numThreads = 1, provider = "cpu",
         ))
-        return WhisperUtteranceDecoder(vad) { samples ->
-            synchronized(nativeLock) {
-                val recognizer = shared ?: run {
-                    val started = System.nanoTime()
-                    create(directory).also { shared = it; modelLoadMillis = (System.nanoTime() - started) / 1_000_000 }
-                }
-                val stream = recognizer.createStream()
-                try {
-                    stream.acceptWaveform(samples, 16_000)
-                    recognizer.decode(stream)
-                    recognizer.getResult(stream).text.trim()
-                } finally { stream.release() }
-            }
+        return WhisperUtteranceDecoder(vad) { samples -> decode(directory, samples) }
+    }
+    /** Only called for bounded audio already authorized by the exact stop keyword graph. */
+    fun confirmStop(context: Context, samples: ShortArray): String {
+        require(samples.size in 1_280..67_072)
+        val evidence = BundledSignalEvidence().apply { observe(samples, samples.size) }
+        if (!evidence.present) return ""
+        val pcm = FloatArray(samples.size) { samples[it] / 32768f }
+        return try { decode(BundledSpeechModel.prepare(context), pcm) } finally { pcm.fill(0f) }
+    }
+    /** Prepare at Stop-listener startup, off the main thread, before a stop candidate arrives. */
+    fun prepareStop(context: Context) { synchronized(nativeLock) { recognizer(BundledSpeechModel.prepare(context)) } }
+    private fun recognizer(directory: File): OfflineRecognizer = shared ?: run {
+            val started = System.nanoTime()
+            create(directory).also { shared = it; modelLoadMillis = (System.nanoTime() - started) / 1_000_000 }
         }
+    private fun decode(directory: File, samples: FloatArray): String = synchronized(nativeLock) {
+        val stream = recognizer(directory).createStream()
+        try { stream.acceptWaveform(samples, 16_000); shared!!.decode(stream); shared!!.getResult(stream).text.trim() }
+        finally { stream.release() }
     }
     private fun file(directory: File, name: String) = File(directory, name).also {
         check(it.isFile) { "The bundled speech model is incomplete." }

@@ -137,7 +137,7 @@ function directives(message) {
         : [line];
     })
     .filter((line) =>
-      /^(?:use|plan|design|research|investigate|find|search|compare|explain|write|draft|generate|create|make|draw|build|develop|implement|fix|repair|refactor|update|add|remove|delete|deploy|publish|run|test|debug|review|analyse|analyze|read|check|open|send|message|text|call|schedule|set|show|summarise|summarize|list|look|tell|help|chat)\b/i.test(
+      /^(?:use|plan|design|research|investigate|find|search|compare|explain|write|draft|generate|create|make|draw|build|develop|implement|fix|repair|refactor|update|add|remove|delete|deploy|publish|run|test|debug|review|analyse|analyze|read|check|open|send|message|text|call|schedule|set|show|summarise|summarize|list|look|tell|help|chat|monitor|watch|track|control|launch|start|keep)\b/i.test(
         line,
       ),
     );
@@ -291,8 +291,8 @@ export function resolveAiRouting(
       "Your Nakama manager handles this technical request; any command still needs its separate approval.";
   } else if (
     has(
-      lines,
-      /^(?:read|check|open|send|message|text|call|schedule|set|show|summarise|summarize|list|delete|deploy|publish|create)\b/i,
+      affirmative,
+      /^(?:read|check|open|send|message|text|call|schedule|set|show|summarise|summarize|list|delete|deploy|publish|create|monitor|watch|track|control|launch|start|keep)\b/i,
     )
   ) {
     role = "tasks.general";

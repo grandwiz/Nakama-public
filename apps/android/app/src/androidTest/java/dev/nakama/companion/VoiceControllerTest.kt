@@ -39,6 +39,13 @@ internal class FakeVoiceServices : VoiceServices {
     var onDevice = true
     var system = true
     var throwOnCreate = false
+    var stopEnabled = false
+    val stopRequests = mutableListOf<Request>()
+    override fun stopRecognition(onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition? {
+        if (!stopEnabled) return null
+        val request = Request(true, onResult, onError).also(stopRequests::add)
+        return object : VoiceRecognition { override fun start() {}; override fun close() { request.closed = true } }
+    }
     data class Request(val onDevice: Boolean, val result: (String) -> Unit, val error: (Int) -> Unit, var closed: Boolean = false)
     val requests = mutableListOf<Request>()
     override fun playback() = output
@@ -58,6 +65,25 @@ internal class FakeVoiceServices : VoiceServices {
 class VoiceControllerTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun main(block: () -> Unit) = instrumentation.runOnMainSync(block)
+
+    @Test fun exactStopInterruptsAllReplyChunksAndCannotReviveFollowUp() = main {
+        val services = FakeVoiceServices().apply { stopEnabled = true }
+        val received = mutableListOf<String>(); var followUps = 0
+        val controller = VoiceController(services, MemoryVoicePreferences(), received::add, {})
+        VoiceOutputBus.onFollowUp = { followUps++ }
+        try {
+            controller.prepareWakeReply(); controller.speak("A long spoken answer. ".repeat(200))
+            val detector = services.stopRequests.single()
+            detector.result("Nakama stock"); assertTrue(controller.activityStatus.startsWith("Speaking"))
+            detector.result("Nakama stop"); assertEquals("Ready", controller.activityStatus); assertTrue(detector.closed); assertFalse(VoiceAudioGate.busy)
+            services.output.finished(services.output.spoken.last().second, true); detector.result("Nakama stop")
+            assertEquals(0, followUps); assertEquals(1, services.output.spoken.size); assertTrue(received.isEmpty())
+            controller.prepareWakeReply(); controller.speak("Say Nakama stop to interrupt.")
+            assertFalse(services.output.spoken.last().first.contains("Nakama stop"))
+            services.output.finished(services.output.spoken.last().second, true)
+            assertEquals(1, followUps); assertTrue(services.stopRequests.last().closed)
+        } finally { controller.close(); VoiceOutputBus.onFollowUp = null }
+    }
 
     @Test fun explicitOfflineChoiceSpeedAndServiceOptInPersistWithoutPlayingOnChange() = main {
         val services = FakeVoiceServices()

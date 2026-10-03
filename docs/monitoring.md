@@ -1,6 +1,6 @@
 # Monitoring mode
 
-Open **Monitoring** in Windows or **Tools → Monitoring** on Android. Ordinary checks use local code and make no AI/model calls. Keep Windows awake and Control Center running. The default interval is 60 seconds, configurable from 30 seconds to one day. New monitors start paused and normally expire after 30 days. Restart requires explicit resume; missed checks do not create a catch-up burst.
+Open **Monitoring** in Windows or **Tools → Monitoring** on Android. Ordinary checks use local code and make no AI/model calls. Keep Windows awake and Control Center running. The default interval is 60 seconds, configurable from 30 seconds to one day. Monitors created in the editor start paused and normally expire after 30 days. A complete direct request to monitor an exact website starts its read-only schedule after validation. Restart requires explicit resume; missed checks do not create a catch-up burst.
 
 ## Watch a website
 
@@ -8,7 +8,7 @@ Enter the exact public HTTPS product/page URL. There is no country restriction o
 
 The polling browser blocks page JavaScript and non-read requests. It uses Nakama's public-address network protections, not arbitrary local-network access. Page content cannot issue instructions, change permissions or choose tools. No whole-page text, login details or screenshot is sent to a model. Unknown/changed pages, sign-in, CAPTCHA and queues need attention. Unavailable sources back off, then pause after repeated failures. A successful poll is an observation, not a reservation or purchase.
 
-You can also say `monitor https://shop.example/product for restock` or `monitor https://shop.example/page for Ready to collect`. These direct commands save a paused monitor. Review it before starting. General research and complex requests still use existing configured roles and their account availability; monitoring itself does not automatically start a research agent.
+You can also say `monitor https://shop.example/product for restock` or `monitor https://shop.example/page for Ready to collect`. These complete direct commands save the monitor and start its read-only schedule after checking the current request and permissions. An active schedule is not proof that the page is available or the condition matched; review its current outcome. Incomplete requests ask for the exact URL and condition. General research and complex requests still use existing configured roles and their account availability; monitoring itself does not automatically start a research agent.
 
 ## Prepare private shopping
 

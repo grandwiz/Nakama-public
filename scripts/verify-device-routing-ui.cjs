@@ -82,6 +82,11 @@ const { _electron } = require(runtime),
       .getByLabel("Routine type", { exact: true })
       .selectOption("alarm");
     const save = page.getByRole("button", { name: /Add routine|Save routine/ });
+    await expect(
+      page.getByLabel("Routine schedule", { exact: true }),
+    ).toHaveValue("once");
+    await expect(save).toBeDisabled();
+    await page.getByLabel(/^Date in /).fill("2099-10-03");
     await expect(save).toBeDisabled();
     await page
       .getByRole("checkbox", { name: "Notify Fixture phone", exact: true })
@@ -97,12 +102,15 @@ const { _electron } = require(runtime),
       }),
     });
     await expect(card).toBeVisible();
+    await expect(card).toContainText("Once · 2099-10-03");
     await expect(
       card.getByRole("status").filter({ hasText: /Waiting for this device/ }),
     ).toHaveCount(2);
     const calls = await app.evaluate(() => globalThis.__routingFixture.calls);
     assert.deepEqual(calls[0].body.targetDeviceIds, ["phone", "tablet"]);
     assert.equal("targetDeviceId" in calls[0].body, false);
+    assert.equal(calls[0].body.scheduledDate, "2099-10-03");
+    assert.deepEqual(calls[0].body.weekdays, []);
     await card.getByRole("button", { name: "Edit", exact: true }).click();
     await app.evaluate(() => {
       globalThis.__routingFixture.revoke = true;
@@ -126,16 +134,27 @@ const { _electron } = require(runtime),
     ).toHaveCount(1);
     const edits = await app.evaluate(() => globalThis.__routingFixture.calls);
     assert.deepEqual(edits[1].body.targetDeviceIds, ["phone"]);
+    assert.equal(edits[1].body.scheduledDate, "2099-10-03");
+    await card.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(page.getByLabel(/^Date in /)).toHaveValue("2099-10-03");
+    await page
+      .getByLabel("Routine schedule", { exact: true })
+      .selectOption("repeat");
+    await save.click();
+    await expect(card).not.toContainText("Once");
+    const converted = await app.evaluate(() =>
+      globalThis.__routingFixture.calls.at(-1),
+    );
+    assert.equal(converted.body.scheduledDate, null);
+    assert.deepEqual(converted.body.weekdays, [1, 2, 3, 4, 5]);
     await page.getByLabel("Name", { exact: true }).fill("Fixture PC reminder");
     await save.click();
-    const reminder = page
-      .locator(".routine-card")
-      .filter({
-        has: page.getByRole("heading", {
-          name: "Fixture PC reminder",
-          exact: true,
-        }),
-      });
+    const reminder = page.locator(".routine-card").filter({
+      has: page.getByRole("heading", {
+        name: "Fixture PC reminder",
+        exact: true,
+      }),
+    });
     await expect(reminder).toContainText("This PC");
     await reminder.getByRole("button", { name: "Edit", exact: true }).click();
     await expect(
@@ -160,10 +179,13 @@ const { _electron } = require(runtime),
         {
           passed: true,
           checks: [
+            "New alarms default to one date and require that date",
             "Alarm requires explicit destination",
             "Two device selections in one schedule",
             "Independent pending receipts",
             "Edit preserves target identities",
+            "One-shot date survives editing and target removal",
+            "Explicit repeat mode clears the date and saves weekdays",
             "Revoked destination blocks save until removed",
             "PC reminder destination survives editing",
             "No model tasks or external actions",

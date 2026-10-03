@@ -358,7 +358,9 @@ test("co-planning, manager synthesis, owned development and both static reviews 
   assert.equal(record(f).reviews.length, 2);
   assert.deepEqual(record(f).checkReceipts, []);
   assert.match(record(f).checkSummary, /static only/);
-  const messages = f.host.store.state.messages.filter(
+  const delivered = await f.host.dispatch("POST", "/api/chats/receipts", { workflowIds: [result.workflowId] });
+  assert.equal(f.host.store.state.messages.some(m => m.workflowId === result.workflowId), false, "Completed work leaves the visible chat");
+  const messages = delivered.messages.filter(
     (m) =>
       m.role === "assistant" &&
       !m.pipelineIntermediate &&
@@ -425,8 +427,7 @@ test("peer questions cannot be discarded by manager; partial answers persist and
   assert.match(f.calls[3].options.prompt, /Adults/);
   assert.match(f.calls[3].options.prompt, /Blue/);
   assert.equal(
-    f.host.store.state.messages.filter((m) => m.kind === "project_questions")
-      .length,
+    (await f.host.dispatch("POST", "/api/chats/receipts", { workflowIds: [id] })).messages.filter((m) => m.kind === "project_questions").length,
     1,
   );
 });

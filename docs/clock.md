@@ -16,7 +16,7 @@ Allow **Notifications** and **Alarms & reminders** when prompted. Check the Naka
 
 Use Clock to pause, resume or cancel a timer. Dismiss its completion notice when finished. Running timer state survives app restarts; Android reschedules saved timers after reboot. Force-stop prevents Android receivers from running until you reopen Nakama. Battery restrictions, notification settings and manufacturer firmware can affect delivery, so verify one short timer on each device before relying on it.
 
-Voice requests receive a spoken result; typed requests receive silent text. Wake mode can handle these local requests without connecting to the PC. Recurring alarms and reminders remain in **Routines**; creating a countdown does not alter them.
+Voice requests receive a spoken result; typed requests receive silent text. Wake mode can handle these local requests without connecting to the PC. Host-managed one-time and recurring alarms, plus reminders, remain in **Routines**; creating a countdown does not alter them.
 
 ## Scope and troubleshooting
 
@@ -28,4 +28,18 @@ All verification uses disposable state, synthetic provider responses and an emul
 
 ## Choosing the device
 
-An unnamed timer stays on the requesting device. Append an exact paired name, for example “set a 10 minute timer on Kitchen tablet,” to send it there; the queued/result reply stays on the requester while the countdown rings on the destination. An unavailable or ambiguous device is rejected without local fallback. Remote timer dispatch requires the destination to be connected and able to process its action inbox. Repeating alarms use the Routines board and can select several Android destinations, each with its own schedule confirmation. See [device routing](device-routing.md).
+An unnamed timer stays on the requesting device. Append an exact paired name, for example “set a 10 minute timer on Kitchen tablet,” to send it there; the queued/result reply stays on the requester while the countdown rings on the destination. An unavailable or ambiguous device is rejected without local fallback. Remote timer dispatch requires the destination to be connected and able to process its action inbox. One-time and repeating host-managed alarms use the Routines board and can select several Android destinations, each with its own schedule confirmation. See [device routing](device-routing.md).
+
+## Host-managed alarms
+
+Say “set an alarm for 7 am tomorrow” to save a one-time alarm on the PC, assigned to the requesting Android unless you name another destination. A bare “set an alarm” asks for its time. Repeat days are used only when requested explicitly. Routines on both clients display and edit the date/repeat choice. Each Android still needs its own Sync phone alarms opt-in and system alarm/notification permissions. A PC-saved receipt is followed by a separate device scheduling confirmation; neither proves the hardware made an audible sound. See [build 7 setup and examples](android-guide.md#alarms-app-requests-and-monitoring-build-7).
+
+## Online alarm sounds
+
+With the Windows Control Center running, say “Set an alarm for 7 am tomorrow with birds chirping sound for 10 seconds”, or “Change my 7 am alarm sound to ocean waves for 12 seconds”. Add “from 2 seconds” to choose a clip start. If more than one alarm matches, Nakama asks which one. Keep the device destination explicit when you want another phone or tablet.
+
+The PC searches Wikimedia Commons for reusable audio, downloads a bounded source and creates a 1–30 second WAV (15 seconds by default). The source must be available under the accepted public-domain/CC0/CC BY/CC BY-SA metadata; a missing match or unsupported source produces an explanation. This is not a general music-stream ripping tool. Search and clipping use no model call. Source title, attribution and license are retained with the sound.
+
+The selected phone downloads and verifies the clip before reporting that it scheduled the alarm. Until then, the host's saved record is not a device confirmation. Enable routine sync and the required Android alarm/notification permissions. The clip remains private on the host and the permitted alarm device.
+
+While the opted-in wake service is ready, **“Nakama stop”** silences a ringing Nakama alarm and stops current speech locally. It does not remove future alarms. You can also use **Stop alarm** in the notification or **Silence ringing alarms** in Routines. Physical recognition over a loud alarm and actual alarm volume need a short acceptance test on each phone/tablet.

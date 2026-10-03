@@ -16,6 +16,7 @@ import {
   validateProjectTeam,
 } from "./project-workflows.mjs";
 import { defaultClock } from "./clock-timers.mjs";
+import { defaultChatHistory, syncChatHistory } from "./chat-history.mjs";
 import { defaultCompanionMemory } from "./companion-memory.mjs";
 import { defaultSkillLibrary } from "./learned-skills.mjs";
 import {
@@ -99,6 +100,7 @@ export function initialState() {
     autonomousTasks: [],
     monitors: [],
     companionMemory: defaultCompanionMemory(),
+    chatHistory: defaultChatHistory(),
     skillLibrary: defaultSkillLibrary(),
     taskBoard: defaultTaskBoard(),
     routineBoard: defaultRoutineBoard(),
@@ -257,6 +259,7 @@ export class Store extends EventEmitter {
     syncTaskBoard(this.state, this.clock());
     syncAgentOffice(this.state);
     stampDeliveryState(this.state);
+    syncChatHistory(this.state, this.clock());
     await this.save();
     return this;
   }
@@ -302,6 +305,7 @@ export class Store extends EventEmitter {
       try {
         result = await fn(this.state);
         stampDeliveryState(this.state);
+    syncChatHistory(this.state, this.clock());
         syncTaskBoard(this.state, this.clock());
         syncAgentOffice(this.state);
         await this.save();
@@ -327,6 +331,10 @@ export class Store extends EventEmitter {
   }
   publicState(owner = false) {
     const data = structuredClone(this.state);
+    delete data.chatHistory;
+    delete data.projectImportRoots;
+    delete data.alarmSoundLibrary;
+    data.projects = data.projects.map(({ importedRoot, importedPath, ...project }) => project);
     delete data.projectReports;
     delete data.projectIntakes;
     delete data.projectGrants;

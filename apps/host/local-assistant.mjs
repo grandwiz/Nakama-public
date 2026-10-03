@@ -1,3 +1,5 @@
+import { EverydayConversation } from "./everyday-conversation.mjs";
+import { parseEverydayRequest, validateEverydayAction, preflightEverydayAction, executeEverydayAction } from "./everyday-actions.mjs";
 import { originId } from "./device-delivery.mjs";
 import { resolveDeviceTarget } from "./device-commands.mjs";
 import { parseClockCommand, localClockReply } from "./local-clock.mjs";
@@ -40,9 +42,10 @@ const ready = (routine) =>
 export class LocalAssistant {
   constructor(host) {
     this.host = host;
+    this.conversation = new EverydayConversation();
   }
   async handle(body, principal) {
-    const input =
+    let input =
       typeof body.message === "string"
         ? clean(
             body.message
@@ -58,8 +61,10 @@ export class LocalAssistant {
           /[\r\n]|```|^>|<\w+>|\b(?:do not|don't|don’t|never|instead of)\b/i.test(
             input,
           )))
-    )
+    ) {
+      this.conversation.clearDevice(originId(principal));
       return null;
+    }
     let match, reply, outcome;
     const access = () => assertPersonalAccess(this.host.store.state, principal);
     const taskRoute = (method, path, data = {}) =>
@@ -67,20 +72,40 @@ export class LocalAssistant {
     const tasks = () => this.host.boards.taskState(principal).items;
     const routines = () => this.host.boards.routineState(principal).routines;
     try {
+      const dialogue = this.conversation.prepare(body, principal, this.host.store.state);
+      if (dialogue?.message) input = clean(dialogue.message);
       const navigation = navigationRequest(input, this.host.store.state, body.projectId);
+      const context = { timeZone: dialogue?.timeZone || body.timeZone, requestId: body.requestId };
+      const browserHandoff = /^(?:open|show)(?: up)?(?: me)? (?:the |that |my )?(captcha|checkout)(?: page)?(?: for me to (?:fill in|complete))?$/i.test(input);
+      const directClock = parseClockCommand(input);
+      const remoteClock = /^(.*?)\s+on\s+(.+)$/i.exec(input);
+      const isRemoteTimer = remoteClock && parseClockCommand(remoteClock[1])?.type === "create";
+      const everyday = !dialogue?.question && !navigation && !browserHandoff && !directClock && !isRemoteTimer ? parseEverydayRequest(input, context) : null;
+      let everydayResult;
+      if (everyday) {
+        validateEverydayAction(everyday, input, context);
+        const prepared = await preflightEverydayAction(this.host, everyday, principal, input, context);
+        everydayResult = await executeEverydayAction(this.host, everyday, principal, input, context, prepared);
+      }
       const remoteTimer = /^(.*?)\s+on\s+(.+)$/i.exec(input);
       const timerCommand = remoteTimer && parseClockCommand(remoteTimer[1]);
       const openApp = /^open\s+(.+?)(?:\s+on\s+(.+))?$/i.exec(input);
       let deviceReply;
-      if (timerCommand?.type === "create") {
+      if (!everydayResult && !dialogue?.question && timerCommand?.type === "create") {
         deviceReply = await this.host.deviceCommands.route({ command: "timer", targetDeviceName: remoteTimer[2], args: {
           durationSeconds: timerCommand.durationSeconds, title: timerCommand.title, ...(body.requestId ? { requestId: body.requestId } : {}),
         } }, principal);
-      } else if (openApp && !navigation && !/^(?:up )?(?:me )?(?:the |that |my )?(?:captcha|checkout)(?: page)?(?: for me to (?:fill in|complete))?$/i.test(openApp[1])) {
+      } else if (!everydayResult && !dialogue?.question && openApp && !navigation && !/^(?:up )?(?:me )?(?:the |that |my )?(?:captcha|checkout)(?: page)?(?: for me to (?:fill in|complete))?$/i.test(openApp[1])) {
         deviceReply = await this.host.deviceCommands.route({ command: "open_app", ...(openApp[2] ? { targetDeviceName: openApp[2] } : {}), args: { appName: openApp[1].replace(/ app$/i, "") } }, principal);
       }
-      const clockReply = deviceReply ? null : await localClockReply(this.host, parseClockCommand(input), body, principal);
-      if (deviceReply) {
+      const clockReply = deviceReply || everydayResult || dialogue?.question ? null : await localClockReply(this.host, parseClockCommand(input), body, principal);
+      if (dialogue?.question) {
+        reply = dialogue.question;
+        outcome = { type: "needs_clarification" };
+      } else if (everydayResult) {
+        reply = everydayResult.description;
+        outcome = everydayResult.outcome || { type: everyday.type, status: everydayResult.status };
+      } else if (deviceReply) {
         reply = deviceReply.reply;
         outcome = { type: deviceReply.timer ? "timer_created" : "device_command_queued", ...(deviceReply.id ? { actionId: deviceReply.id } : {}), targetDeviceId: deviceReply.targetDeviceId || "desktop" };
       } else if (clockReply) {
@@ -519,43 +544,6 @@ export class LocalAssistant {
         outcome = { type: "routine_created", id: item.id };
       } else if (
         (match =
-          /^(?:set|create|add)(?: a| an)? (morning )?alarm(?: for| at)?\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)(?:\s+(every day|daily|on weekdays|on weekends))?(?:\s+on\s+(.+))?$/i.exec(
-            input,
-          ))
-      ) {
-        access();
-        if (principal.kind !== "device" && !match[4])
-          throw new ApiError(
-            409,
-            "Choose the target phone in the Routines board before creating an alarm, or ask on that phone.",
-          );
-        const time = clockTime(match[2]);
-        if (!time)
-          throw new ApiError(
-            400,
-            "Use a clear alarm time, such as 07:00 or 7 am.",
-          );
-        const cadence = (match[3] || "daily").toLowerCase();
-        const item = await taskRoute("POST", "/api/routines", {
-          title: match[1] ? "Morning alarm" : "Alarm",
-          details: "Requested by voice or chat",
-          kind: "alarm",
-          time,
-          timeZone: body.timeZone || hostTimeZone(),
-          weekdays:
-            cadence === "on weekdays"
-              ? [1, 2, 3, 4, 5]
-              : cadence === "on weekends"
-                ? [0, 6]
-                : [0, 1, 2, 3, 4, 5, 6],
-          enabled: true,
-          targetDeviceIds: match[4] ? match[4].split(/\s+and\s+|\s*,\s*/i).map((name) => resolveDeviceTarget(this.host.store.state, principal, { targetDeviceName: name }, { desktop: false, connected: false }).id) : [principal.id],
-          ...(body.requestId ? { requestId: body.requestId } : {}),
-        });
-        reply = ready(item);
-        outcome = { type: "routine_created", id: item.id };
-      } else if (
-        (match =
           /^(?:complete|finish|tick off) (?:the )?(?:routine|reminder)\s+(.+)$/i.exec(
             input,
           ))
@@ -722,7 +710,6 @@ export class LocalAssistant {
           createdAt: now(),
         },
       );
-      state.messages = state.messages.slice(-500);
     });
     return { local: true, taskIds: [], reply, messageId, outcome };
   }

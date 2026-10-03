@@ -1,5 +1,5 @@
 export interface NetworkStatus {
-  configured: { allowLan: boolean; port: number };
+  configured: { allowLan: boolean; vpnOnly?: boolean; port: number };
   listener: {
     active: boolean;
     allowLan: boolean;
@@ -69,6 +69,6 @@ export function pairingNetworkBlock(status?: NetworkStatus): string | null {
   if (status.restartNeeded)
     return "Network settings have changed. Fully close and reopen Control Center, then check the network again.";
   if (!status.listener.allowLan)
-    return "This PC is listening locally only. In Settings, enable ‘Allow paired devices over a private network’, then fully close and reopen Control Center.";
+    return "This PC is listening locally only. In Settings, choose VPN or Home LAN under ‘Allow paired devices over a private network’, then fully close and reopen Control Center.";
   return null;
 }

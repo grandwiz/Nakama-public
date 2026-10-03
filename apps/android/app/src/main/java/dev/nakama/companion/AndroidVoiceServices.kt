@@ -44,6 +44,8 @@ internal interface VoiceRecognition {
     fun observe(onReady: () -> Unit, onEnd: () -> Unit, onPartial: (String) -> Unit) {}
 }
 internal interface VoiceServices {
+    fun stopRecognition(onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition? = null
+    fun silenceAlarms() {}
     fun playback(): VoicePlayback
     fun onDeviceRecognitionAvailable(): Boolean
     fun systemRecognitionAvailable(): Boolean
@@ -96,6 +98,12 @@ internal class AndroidVoiceServices(
         else systemRecognition(onReady, onEnd, onResult, onError)
     fun wakeRecognition(onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition =
         BundledSpeechRecognition(context, true, {}, {}, onResult, onError)
+
+    override fun stopRecognition(onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition? {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) return null
+        return BundledSpeechRecognition(context, true, {}, {}, onResult, onError, stopOnly = true)
+    }
+    override fun silenceAlarms() { PhoneAlarmScheduler.silence(context); LocalTimers.silenceFinished(context) }
 
     /** This path is selected only after the user's explicit Android-service opt-in. */
     private fun systemRecognition(onReady: () -> Unit, onEnd: () -> Unit, onResult: (String) -> Unit, onError: (Int) -> Unit): VoiceRecognition {

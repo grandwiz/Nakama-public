@@ -59,6 +59,14 @@ class BundledRecognitionSessionTest {
         assertEquals(4, decoder.accepts); assertEquals(0, decoder.finishes)
         assertTrue(audio.stopped); assertTrue(audio.closed); assertTrue(decoder.closed)
     }
+    @Test fun rejectedContinuousCandidateReportsResumedWithoutSubmittingEmptyText() {
+        val audio = SyntheticMicrophone(); val decoder = SyntheticDecoder(listOf("")); var resumed = 0
+        lateinit var input: BundledRecognitionSession
+        audio.onRead = { if (it == 2) input.close() }
+        input = BundledRecognitionSession(true, { decoder }, { audio }, { it() }, { it() }, { audio.clock }, {}, {},
+            { fail("Rejected candidate cannot submit") }, {}, { fail("Unexpected error") }, resumed = { resumed++ })
+        input.start(); assertEquals(1, resumed)
+    }
     @Test fun stopDropsQueuedPartialAndResultCallbacksRatherThanSubmittingThem() {
         val audio = SyntheticMicrophone(); val decoder = SyntheticDecoder(listOf(null), "PRIVATE PARTIAL")
         val callbacks = ArrayDeque<() -> Unit>(); val emitted = mutableListOf<String>()

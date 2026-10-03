@@ -6,7 +6,7 @@
 
 | Area | Available now | Limit / acceptance remaining |
 | --- | --- | --- |
-| Low-cost monitoring | Saved paused monitors, configurable 60-second default cadence, stock/text checks, backoff, expiry, pause/resume and private current-record alerts | Host must run; unknown/dynamic/ambiguous pages stop; no model per poll and no instant-stock guarantee |
+| Low-cost monitoring | Saved monitors, direct requested read-only website checks, configurable 60-second default cadence, stock/text checks, backoff, expiry, pause/resume and private current-record alerts | Host must run; unknown/dynamic/ambiguous pages stop; no model per poll and no instant-stock guarantee |
 | Persistent private shops | Dedicated monitor profiles, human login/address attestation, explicit forget and selected-device browser handoff | No credentials/private pixels in model context; setup attestation is not checkout verification |
 | Cart preparation | Exact owner-approved native `/cart/add`, `/cart.js`, `/checkout` adapter with empty/exact-cart checks, quantity one, variant/price/currency constraints and one saved attempt | Many shops are unsupported; no arbitrary JavaScript checkout, CAPTCHA bypass, payment or order submission; Pokémon Center unverified |
 | App monitoring | Exact Windows process/window-title condition; Android local exact-foreground-app observation with visible consent/Stop | No arbitrary Windows UI contents/input; phone needs accessibility, unlocked foreground app and active consent; physical behavior unaccepted |
@@ -14,6 +14,16 @@
 | Update recovery | Verified private backup, retained previous signed artifact, quiescent handoff and no replay after interruption | Installer launch does not prove installation/health; recovery is manual, not automatic schema rollback; Android transfer/install is manual |
 
 See [Monitoring](monitoring.md), [Dynamic upgrade](dynamic-upgrade.md) and the [implementation plan](monitoring-upgrades-plan.md). These changes complete relevant foundations; universal browser/app autonomy and every older acceptance gap are not claimed complete.
+
+## Build 8 companion update
+
+Locked-screen wake, a 30-second follow-up window, local stop recognition, online reusable alarm clips, message timestamps, bounded chat archives, active-only Agent office, local project imports and guided VPN access are implemented. Claude subscription quota has a fixed read-only adapter plus an owner-only official /usage handoff for authentication repair. See [chat memory](chat-memory.md), [project imports](project-import.md), [remote access](remote-access.md) and [Claude usage](claude-usage.md). Android's unlock/consent requirements for on-screen actions remain. Physical audio and real mobile-network acceptance remain outstanding.
+
+## Everyday request delegation
+
+Build 7 exposes host-managed one-time/repeating alarms, installed-app launch and read-only website monitoring to the task manager. Complete supported instructions use deterministic local routes; missing alarm time or monitor URL/condition produces a scoped follow-up question. The manager can propose the same typed actions under the current caller's permissions. Alarm records remain on the host and default delivery to their requesting Android; Android reports its own exact-version scheduling outcome. Website checks run on the host without model inference per poll.
+
+This removes the conversation-mode gap for these adapters. It does not implement every possible app operation, bypass Android permissions or enable paid services. The new behavior is subject to the latest recorded synthetic checks and separate physical acceptance.
 
 ## Device routing
 
@@ -52,14 +62,14 @@ Git initialization/publication, database migrations, payment onboarding, custom 
 | Area | Available now | Important limit / acceptance still needed |
 | --- | --- | --- |
 | Task clipboard | Automatic job/workflow cards, personal tasks, cross-out, daily completed cleanup and manual removal on both apps | Card completion does not finish a source job; cleanup needs a running host or next-start catch-up |
-| Routines | Shared editing/pause/removal, weekdays, IANA time zone, due reminders and targeted phone alarms | Phone sync/permissions and actual sound/cancellation need physical testing; offline phones can retain old schedules |
+| Routines | Shared editing/pause/removal, one-time dates or repeat weekdays, IANA time zone, due reminders and targeted phone alarms with optional reusable sound clips | Phone sync/permissions and actual sound/cancellation need physical testing; offline phones can retain old schedules |
 | Clock and timers | Built-in Windows Clock and offline Android Clock; named countdowns, pause/resume/cancel, saved deadlines and completion notices | Phone notification/exact-alarm permissions and physical sound still need acceptance; PC timers need an awake running host; these are separate device-local lists |
 | Core Memory | Visible/editable notes for preferences, self-described traits/habits and personality, with pause/forget controls | No model training, hidden sensitive inference or unlimited memory; forgetting does not erase old conversation |
 | Learned skills | Explicit teaching, editable methods, reviewed-project candidates, bounded relevant context for Nakama and workers, selection receipts and pause/forget | Candidates require acceptance; selection is not proof of use or success; no model training/new tools/extra inference |
 | Android motion | Lightweight page, list, status and mascot animations; system and app reduced-motion controls | Physical smoothness, frame timing and battery effects remain unmeasured |
 | Navigation | Fixed app destinations from direct requests; Android local/system/app routes under existing boundaries | Unrecognised phrases and ambiguous apps need clarification; no arbitrary page-script execution or historic replay |
 | Voice/widget/mascot | Per-request voice/text reply mode, offline spoken answers/receipts, widget and movable Mote with miniature-computer working/waiting states | Engine, voice, permission and manufacturer background behaviour need physical acceptance; activity display is not screen streaming |
-| Wake listener | Saved opt-in visible local keyword listener for Nakama/Hey Nakama, bundled Whisper request transcription, background question/reply path and receipt-only continuation of foreground voice work | Requires an unlocked device, microphone/notification permission and successful preparation of the offline English model bundled in the APK. Wait for Microphone ready; recommend Hey Nakama. No Android model download is required. Separate offline Android TTS speaks replies. PC questions require an awake permitted host; local clock/timers do not. Physical recognition accuracy and lifecycle behavior remain unverified |
+| Wake listener | Saved opt-in visible local keyword listener for Nakama/Hey Nakama, bundled Whisper request transcription, background question/reply path and receipt-only continuation of foreground voice work | Continues while locked after explicit opt-in, including requested sensitive speech; requires microphone/notification permission and successful preparation of the offline English model bundled in the APK. Wait for Microphone ready; recommend Hey Nakama. No Android model download is required. Separate offline Android TTS speaks replies. PC questions require an awake permitted host; local clock/timers do not. Physical recognition accuracy and lifecycle behavior remain unverified |
 | App selectors | Installed Android apps by name on both clients; exact package retained behind the selection | Launcher-visible apps only; desktop needs a fresh device-scoped catalog; selection grants no control or observation authority |
 | Phone location | Explicit own-device consent, platform location service, latest fix/accuracy/timestamps, PC map/forget | No continuous availability guarantee or location trail; GPS/reconnect/battery need physical acceptance |
 | Map/weather requests | Explicit lookup links derived from a saved fix | A lookup link is not live weather; opening it shares coordinates with the selected service |
@@ -78,7 +88,7 @@ Shared tools and office/task history remain unavailable to Google-disabled/proje
 | Git/GitHub | Link labelled accounts, import existing repositories, fetch/fast-forward pull, review selected-file commits and prepare exact pushes; existing checkpoints remain | Push needs PC approval. Ordinary complete repositories only; no force-history rewrite, automatic merge/stash/reset or arbitrary existing-folder adoption. Remote repository creation is a separate Delivery operation. Live GitHub acceptance remains |
 | ChatGPT | Official Codex subscription route, connection/model checks and supported reasoning settings | Exact account eligibility, model quality and current latency need live acceptance |
 | Claude | Official subscription auth guard, exact model/effort preferences and linked-account support | Full live Opus/Fable handoff remains unaccepted; Fable requires supported CLI/Max and owner credit-setting attestation |
-| Usage | Reported Codex windows and honest unavailable/dated states | Automatic Claude remaining quotas are unavailable; Codex windows are not every ChatGPT product limit |
+| Usage | Read-only Codex and recognized Claude subscription windows, check/reset times and honest unavailable states | Claude may need the owner-only official /usage sign-in handoff; its internal quota interface can change. Codex windows are not every ChatGPT product limit |
 | Gmail/Calendar | Separate OAuth identities, supported reads/search and bounded action requests | Owner OAuth setup and real-account acceptance remain; no real mailbox/calendar mutation was used as a test |
 | Chrome extension | Explicit allowed-tab sessions, supported read/click/type/select/scroll/navigation and bounded visible capture | Separate from the internal browser; no universal browsing agent, full-page capture or complete shadow/frame coverage |
 | Development services | Scoped labelled connections, resource/status reads and the typed provisioning operations above | Credentials do not authorize arbitrary provider APIs or service deletion |

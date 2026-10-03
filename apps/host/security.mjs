@@ -55,6 +55,14 @@ export async function workspace(root) {
   return real;
 }
 export async function projectRoot(root, project) {
+  if (project.imported === true) {
+    if (!project.importedRoot || !project.importedPath) throw new ApiError(403, "Imported project has no recorded library boundary.");
+    const library = await workspace(project.importedRoot);
+    if (library !== path.resolve(project.importedRoot)) throw new ApiError(403, "Imported project library changed.");
+    const checked = await safeFile(library, project.importedPath);
+    if (checked !== path.resolve(project.path) || !(await fs.stat(checked)).isDirectory()) throw new ApiError(403, "Imported project moved outside its selected folder.");
+    return checked;
+  }
   const realRoot = await workspace(root);
   const realProject = await fs.realpath(project.path).catch(() => {
     throw new ApiError(404, "The project folder is missing.");

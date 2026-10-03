@@ -19,6 +19,23 @@ class VoiceController internal constructor(
     private var saved = preferences.read()
     private var playback: VoicePlayback? = null
     private var recognizer: VoiceRecognition? = null
+    private var stopRecognizer: VoiceRecognition? = null
+    private var stopGeneration = 0L
+    private var wakeFollowUp = false
+    fun prepareWakeReply() { handsFree = false; wakeFollowUp = true }
+    private fun closeStopRecognition() { stopGeneration++; runCatching { stopRecognizer?.close() }; stopRecognizer = null }
+    private fun listenForStop() {
+        if (stopRecognizer != null || closed) return
+        val token = ++stopGeneration
+        try {
+            stopRecognizer = services.stopRecognition({ text ->
+                if (!closed && token == stopGeneration && activeUtterance != null && StopCommandPolicy.matches(text)) {
+                    services.silenceAlarms(); VoiceOutputBus.stopAll(); stop()
+                }
+            }, { if (token == stopGeneration) closeStopRecognition() })
+            stopRecognizer?.start()
+        } catch (_: Exception) { closeStopRecognition() }
+    }
     private var closed = false
     private var engineGeneration = 0L
     private var recognitionGeneration = 0L
@@ -41,7 +58,7 @@ class VoiceController internal constructor(
 
     init { refresh() }
 
-    private fun state(message: String) { VoiceAudioGate.set(this, recognizer != null || activeUtterance != null || handsFree); activityStatus = message; onState(message) }
+    private fun state(message: String) { VoiceAudioGate.set(this, recognizer != null || activeUtterance != null || handsFree); VoiceOutputBus.set(this, activeUtterance != null, ::stop); activityStatus = message; onState(message) }
     private fun save() { preferences.write(saved) }
     private fun refreshRecognition() {
         recognitionMode = VoicePolicy.recognitionMode(
@@ -80,9 +97,13 @@ class VoiceController internal constructor(
             }, { id, success ->
                 if (!closed && generation == engineGeneration && id == activeUtterance) {
                     activeUtterance = null
-                    if (!success) { handsFree = false; speechQueue.clear(); state("Voice playback failed. Check Android's speech settings.") }
+                    if (!success) { closeStopRecognition(); handsFree = false; speechQueue.clear(); state("Voice playback failed. Check Android's speech settings.") }
                     else if (speechQueue.isNotEmpty()) speakNext()
-                    else if (handsFree) listen(true) else state("Ready")
+                    else {
+                        closeStopRecognition()
+                        if (wakeFollowUp) { handsFree = false; state("Ready"); VoiceOutputBus.onFollowUp?.invoke() }
+                        else if (handsFree) listen(true) else state("Ready")
+                    }
                 }
             })
         } catch (_: Exception) { engineStatus = "Android speech could not start. Check speech settings, then refresh voices." }
@@ -133,7 +154,9 @@ class VoiceController internal constructor(
                     ++recognitionGeneration
                     runCatching { recognizer?.close() }; recognizer = null
                     state(if (text.isBlank()) "No words detected. Tap Talk to try again." else "Ready")
-                    if (text.isBlank()) handsFree = false else onText(text)
+                    if (text.isBlank()) handsFree = false
+                    else if (StopCommandPolicy.matches(text)) { services.silenceAlarms(); VoiceOutputBus.stopAll(); stop() }
+                    else onText(text)
                 } },
                 { error -> if (current()) {
                     ++recognitionGeneration; handsFree = false
@@ -164,7 +187,7 @@ class VoiceController internal constructor(
             else { handsFree = false; state(engineStatus) }
             return
         }
-        speechQueue.clear(); speechQueue.addAll(VoicePolicy.speechChunks(text))
+        speechQueue.clear(); speechQueue.addAll(VoicePolicy.speechChunks(StopCommandPolicy.forPlayback(text)))
         speakNext()
     }
     private fun speakNext() {
@@ -177,8 +200,9 @@ class VoiceController internal constructor(
         val id = "nakama-${++utteranceGeneration}"
         activeUtterance = id
         state("Speaking · offline Android voice")
+        listenForStop()
         if (!runCatching { playback?.speak(plain, id) == true }.getOrDefault(false)) {
-            activeUtterance = null; handsFree = false; speechQueue.clear(); state("Voice playback failed. Check Android's speech settings.")
+            activeUtterance = null; closeStopRecognition(); handsFree = false; speechQueue.clear(); state("Voice playback failed. Check Android's speech settings.")
         }
     }
 
@@ -189,6 +213,7 @@ class VoiceController internal constructor(
     }
     fun stop() {
         ++session
+        wakeFollowUp = false; closeStopRecognition()
         deferredSpeech = null; speechQueue.clear()
         handsFree = false; ++recognitionGeneration; activeUtterance = null
         runCatching { recognizer?.close() }; recognizer = null

@@ -18,11 +18,17 @@ class DeviceIsolationTest {
     @Test fun acceptedTaskIdDoesNotAuthorizeAnotherDevicesMessage() = runBlocking {
         val spoken = mutableListOf<String>(); var reads = 0
         fun message(id: String, recipient: String, text: String) = JSONObject().put("id", id).put("role", "assistant").put("taskId", "same-task").put("deliveryDeviceId", recipient).put("content", text)
-        WakeConversation("phone", { method, _, _ ->
-            assertEquals("GET", method); reads++
-            state(JSONArray().put(message("other", "tablet", "FOREIGN MUST STAY SILENT")).apply {
-                if (reads > 1) put(message("mine", "phone", "Only this phone's answer"))
-            })
+        WakeConversation("phone", { method, path, body ->
+            if (path == "/api/chats/receipts") {
+                assertEquals("POST", method)
+                assertEquals("same-task", body!!.getJSONArray("taskIds").getString(0))
+                JSONObject().put("messages", JSONArray())
+            } else {
+                assertEquals("GET", method); assertEquals("/api/state", path); reads++
+                state(JSONArray().put(message("other", "tablet", "FOREIGN MUST STAY SILENT")).apply {
+                    if (reads > 1) put(message("mine", "phone", "Only this phone's answer"))
+                })
+            }
         }, { true }, { spoken += it }, { fail("No foreground action is needed") }, pause = {})
             .follow(JSONObject().put("deliveryDeviceId", "phone").put("taskIds", JSONArray().put("same-task")))
         assertEquals(listOf("Only this phone's answer"), spoken)
@@ -33,13 +39,23 @@ class DeviceIsolationTest {
             WakeConversation("phone", { _, _, _ -> state() }, { true }, { spoken += it }, {}, pause = {})
                 .follow(JSONObject().put("deliveryDeviceId", recipient).put("reply", "MUST STAY SILENT"))
         }
-        var reads = 0
-        WakeConversation("phone", { _, _, _ ->
-            reads++
-            state(JSONArray().put(JSONObject().put("id", "reply").put("role", "assistant").put("taskId", "task")
-                .put("deliveryDeviceId", if (reads == 1) "phone" else "tablet").put("content", "CHANGED RECIPIENT")))
+        var reads = 0; var receiptReads = 0
+        fun message(recipient: String) = JSONObject().put("id", "reply").put("role", "assistant").put("taskId", "task")
+            .put("deliveryDeviceId", recipient).put("content", "CHANGED RECIPIENT")
+        WakeConversation("phone", { method, path, body ->
+            if (path == "/api/chats/receipts") {
+                assertEquals("POST", method)
+                assertEquals("task", body!!.getJSONArray("taskIds").getString(0)); receiptReads++
+                // The archive was read before the newer state changed the recipient.
+                JSONObject().put("messages", JSONArray().put(message("phone")))
+            } else {
+                assertEquals("GET", method); assertEquals("/api/state", path); reads++
+                state(JSONArray().put(message(if (reads <= 2) "phone" else "tablet"))).put("tasks", JSONArray().put(
+                    JSONObject().put("id", "task").put("deliveryDeviceId", "phone").put("status", if (reads <= 2) "running" else "completed")))
+            }
         }, { true }, { spoken += it }, {}, pause = {})
             .follow(JSONObject().put("deliveryDeviceId", "phone").put("taskIds", JSONArray().put("task")))
+        assertTrue(receiptReads >= 2)
         assertTrue(spoken.isEmpty())
     }
     @Test fun attentionAndActionExecutionHaveSeparateExplicitRecipients() {

@@ -95,6 +95,12 @@ class WakeServiceLifecycleTest {
             await("Background service stopped processing recognition callbacks") {
                 WakeWordService.status.contains("continuous local wake listening") && inputs.size == 1
             }
+            assertTrue(instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN))
+            SystemClock.sleep(700)
+            main { assertTrue("Lock must keep the opted-in listener active", WakeWordService.running); assertFalse(inputs.single().closed); inputs.single().completed("unrelated locked synthetic words") }
+            await("Locked listener stopped reporting readiness") { WakeWordService.status.contains("continuous local wake listening") }
+            instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_WAKEUP").close()
+            instrumentation.uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
             main { visible.finishAndRemoveTask() }
             await("Task removal did not destroy its activity") {
                 ActivityLifecycleMonitorRegistry.getInstance().getLifecycleStageOf(visible) == Stage.DESTROYED

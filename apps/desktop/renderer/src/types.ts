@@ -193,6 +193,19 @@ export interface GoogleAccount {
   status: string;
   connectedAt: string;
 }
+export interface ChatRecord {
+  id: string;
+  revision: number;
+  projectId?: string | null;
+  deliveryDeviceId: string;
+  status: "active" | "archived" | "completed";
+  startedAt: string;
+  updatedAt: string;
+  messageCount: number;
+  summary: string;
+  summaryMethod: "local_extract";
+  canComplete: boolean;
+}
 export interface Message {
   id: string;
   role: string;
@@ -200,6 +213,8 @@ export interface Message {
   createdAt: string;
   projectId?: string;
   localOutcome?: { type: string; url?: string };
+  chatId?: string;
+  deliveryOnly?: boolean;
 }
 export interface AppState {
   projectIntakes?: import("./project-setup").ProjectIntake[];
@@ -215,6 +230,7 @@ export interface AppState {
     workspaceRoot: string;
     hostName: string;
     allowLan: boolean;
+    vpnOnly?: boolean;
     port: number;
     voice: string;
     confirmOrdinaryActions: boolean;
@@ -229,6 +245,7 @@ export interface AppState {
   approvals: Approval[];
   connections: Connection[];
   messages: Message[];
+  chatHistory?: { rotationHours: number; chats: ChatRecord[] };
   googleAccounts?: GoogleAccount[];
   checkRepairs?: CheckRepair[];
   projectWorkflows?: ProjectWorkflow[];
@@ -236,6 +253,7 @@ export interface AppState {
   companionMemory?: CompanionMemoryState;
   taskBoard?: TaskBoard;
   routineBoard?: RoutineBoard;
+  alarmSounds?: import("./foundations-types").AlarmSound[];
   deviceLocations?: {
     deviceId: string;
     enabled: boolean;

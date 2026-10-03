@@ -42,6 +42,7 @@ internal class BundledRecognitionSession(
     private val partial: (String) -> Unit,
     private val failure: (Int) -> Unit,
     private val processing: () -> Unit = {},
+    private val resumed: () -> Unit = {},
     private val idle: () -> Unit = { Thread.sleep(10) },
 ) {
     private val lock = Any()
@@ -129,7 +130,7 @@ internal class BundledRecognitionSession(
                         if (text.isNotBlank()) {
                             finalText(text)
                             if (!continuous) { completed = true; break }
-                        }
+                        } else if (continuous) deliver(resumed)
                         lastPartial = ""
                     } else if (now() - partialAt >= 200) {
                         partialAt = now()

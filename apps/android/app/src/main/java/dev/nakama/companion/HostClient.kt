@@ -97,7 +97,7 @@ class PairingVault(context: Context) {
     }
     fun save(identity: HostIdentity) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val encrypted = cipher.doFinal(identity.json().toString().toByteArray(Charsets.UTF_8))
+        val encrypted = cipher.doFinal(identity.json().put("alternateUrls", org.json.JSONArray(HostClient.knownEndpoints(identity))).toString().toByteArray(Charsets.UTF_8))
         check(prefs.edit().putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .putString("data", Base64.encodeToString(encrypted, Base64.NO_WRAP)).commit()) { "Could not save pairing securely." }
     }
@@ -107,14 +107,43 @@ class PairingVault(context: Context) {
             val iv = Base64.decode(prefs.getString("iv", ""), Base64.NO_WRAP)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv)) }
             val json = JSONObject(String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)), Charsets.UTF_8))
-            HostIdentity(PairingValidation.endpoint(json.getString("url")), PairingValidation.fingerprint(json.getString("fingerprint")), json.getString("token"), json.getString("deviceId"), json.getString("name"))
+            HostIdentity(PairingValidation.endpoint(json.getString("url")), PairingValidation.fingerprint(json.getString("fingerprint")), json.getString("token"), json.getString("deviceId"), json.getString("name")).also { HostClient.rememberEndpoints(it, json.optJSONArray("alternateUrls")) }
         }.getOrNull()
+    }
+    fun rememberEndpoints(identity: HostIdentity, state: JSONObject) {
+        if (load() != identity) return
+        val before = HostClient.knownEndpoints(identity)
+        HostClient.rememberEndpoints(identity, state.optJSONArray("hostEndpoints"))
+        if (before != HostClient.knownEndpoints(identity)) save(identity)
     }
     fun clear() { prefs.edit().clear().commit() }
 }
 
 class HostClient(private val url: String, fingerprint: String, private val token: String? = null) {
     constructor(identity: HostIdentity) : this(identity.url, identity.fingerprint, identity.token)
+    companion object {
+        private val endpoints = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+        private val successfulEndpoints = java.util.concurrent.ConcurrentHashMap<String, String>()
+        private fun candidates(primary: String, identityKey: String): List<String> {
+            val allowed = (listOf(PairingValidation.endpoint(primary)) + endpoints[identityKey].orEmpty()).distinct().take(5)
+            val preferred = successfulEndpoints[identityKey]?.takeIf { it in allowed }
+            return if (preferred == null) allowed else listOf(preferred) + allowed.filter { it != preferred }
+        }
+        internal fun connectionCandidates(identity: HostIdentity): List<String> = candidates(identity.url, key(identity))
+        private fun rememberSuccess(identityKey: String, endpoint: String) {
+            if (successfulEndpoints.size >= 32 && !successfulEndpoints.containsKey(identityKey)) successfulEndpoints.clear()
+            successfulEndpoints[identityKey] = endpoint
+        }
+        private fun key(identity: HostIdentity) = PairingValidation.fingerprint(identity.fingerprint) + ":" + identity.token
+        fun knownEndpoints(identity: HostIdentity): List<String> = endpoints[key(identity)].orEmpty()
+        fun rememberEndpoints(identity: HostIdentity, values: org.json.JSONArray?) {
+            if (values == null) return
+            val urls = (0 until minOf(values.length(), 4)).mapNotNull { index -> runCatching { PairingValidation.deviceEndpoint(values.getString(index)) }.getOrNull() }.distinct()
+            if (urls.isEmpty()) { endpoints.remove(key(identity)); successfulEndpoints.remove(key(identity)); return }
+            if (endpoints.size >= 32 && !endpoints.containsKey(key(identity))) endpoints.clear()
+            endpoints[key(identity)] = urls
+        }
+    }
     private val pin = PairingValidation.fingerprint(fingerprint)
     private val tls = SSLContext.getInstance("TLS").apply {
         init(null, arrayOf(object : X509TrustManager {
@@ -131,7 +160,29 @@ class HostClient(private val url: String, fingerprint: String, private val token
 
     fun request(method: String, path: String, body: JSONObject? = null): JSONObject {
         require(path.startsWith("/api/") && !path.contains("..")) { "Invalid API path" }
-        val connection = URL(PairingValidation.endpoint(url) + path).openConnection() as HttpsURLConnection
+        val candidates = candidates(url, pin + ":" + token)
+        var selected: String? = null
+        var lastFailure: Exception? = null
+        for (candidate in candidates) {
+            val endpoint = URI(candidate)
+            try {
+                // Probe certificate trust with TLS only: no HTTP method, headers or body.
+                (tls.socketFactory.createSocket() as javax.net.ssl.SSLSocket).use { probe ->
+                    probe.connect(java.net.InetSocketAddress(endpoint.host, if (endpoint.port > 0) endpoint.port else 443), if (candidates.size > 1) 2500 else 10000)
+                    probe.soTimeout = 5000
+                    probe.startHandshake()
+                }
+                selected = candidate
+                break
+            } catch (failure: Exception) {
+                if (failure is javax.net.ssl.SSLException || failure is java.security.cert.CertificateException) throw failure
+                if (failure !is java.io.IOException) throw failure
+                lastFailure = failure
+            }
+        }
+        val destination = selected ?: throw (lastFailure ?: java.net.ConnectException("No host endpoint is reachable."))
+        // Once an endpoint is selected, dispatch exactly once. An uncertain HTTP result is never retried.
+        val connection = URL(destination + path).openConnection() as HttpsURLConnection
         connection.sslSocketFactory = tls.socketFactory
         // An exact certificate pin authenticates a private host regardless of its VPN/LAN hostname.
         // This verifier is deliberately not usable without the mandatory trust manager above.
@@ -140,16 +191,21 @@ class HostClient(private val url: String, fingerprint: String, private val token
             leaf != null && MessageDigest.getInstance("SHA-256").digest(leaf.encoded).joinToString("") { "%02x".format(it) } == pin
         }
         connection.requestMethod = method
-        connection.connectTimeout = 10_000
+        connection.connectTimeout = if (candidates.size > 1) 2_500 else 10_000
         connection.readTimeout = 25_000
         connection.instanceFollowRedirects = false
         connection.setRequestProperty("Accept", "application/json")
         token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+        val requestBytes = body?.toString()?.toByteArray(Charsets.UTF_8)
+        connection.doOutput = requestBytes != null
+        if (requestBytes != null) {
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            // Streaming mode prevents the HTTP stack from replaying a buffered mutation.
+            connection.setFixedLengthStreamingMode(requestBytes.size)
+        }
         try {
-            body?.let {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                connection.outputStream.use { stream -> stream.write(it.toString().toByteArray(Charsets.UTF_8)) }
+            requestBytes?.let {
+                connection.outputStream.use { stream -> stream.write(it) }
             }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
@@ -158,6 +214,7 @@ class HostClient(private val url: String, fingerprint: String, private val token
             val raw = String(bytes, Charsets.UTF_8)
             val result = if (raw.isBlank()) JSONObject() else JSONObject(raw)
             if (status !in 200..299) throw HostException(status, result.optString("error", "Host request failed ($status)"))
+            if (token != null) rememberSuccess(pin + ":" + token, destination)
             return result
         } finally { connection.disconnect() }
     }

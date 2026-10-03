@@ -63,8 +63,8 @@ object NavigationPolicy {
         Regex("^(?:open|show|go to|take me to)(?: the| my)?\\s+(.+)$").matchEntire(text)?.let {
             pages[it.groupValues[1]]?.let { page -> return page }
         }
-        Regex("^open app\\s+([\\p{L}\\p{N}][\\p{L}\\p{N} ._-]{0,99})$", RegexOption.IGNORE_CASE).matchEntire(raw)?.let {
-            return NakamaNavigation.App(it.groupValues[1].trim())
+        AppLaunchPolicy.parse(input)?.takeIf { it.packageName == null }?.let {
+            return NakamaNavigation.App(it.label)
         }
         return null
     }

@@ -49,11 +49,19 @@ object FoundationPolicy {
     /** Only a leading wake phrase grants the following utterance; incidental mentions are discarded. */
     fun wakeCommand(text: String): String? = Regex("^(?:hey\\s+)?nakama\\b[,:.!?]?\\s*(.*)$", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).matchEntire(text.trim())?.groupValues?.get(1)?.trim()?.take(24_000)
 
-    fun nextAlarm(time: String, weekdays: Set<Int>, zone: String, now: Instant): Instant? {
-        if (!time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) || weekdays.isEmpty() || weekdays.any { it !in 0..6 }) return null
+    fun nextAlarm(time: String, weekdays: Set<Int>, zone: String, now: Instant, scheduledDate: String? = null): Instant? {
+        if (!time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]"))) return null
+        if (scheduledDate == null && (weekdays.isEmpty() || weekdays.any { it !in 0..6 })) return null
         val zoneId = runCatching { ZoneId.of(zone) }.getOrNull() ?: return null
         val local = now.atZone(zoneId)
         val (hour, minute) = time.split(':').map(String::toInt)
+        if (scheduledDate != null) {
+            if (!scheduledDate.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}"))) return null
+            val day = runCatching { java.time.LocalDate.parse(scheduledDate) }.getOrNull() ?: return null
+            val wallTime = java.time.LocalDateTime.of(day, java.time.LocalTime.of(hour, minute))
+            val validOffset = zoneId.rules.getValidOffsets(wallTime).firstOrNull() ?: return null
+            return wallTime.toInstant(validOffset).takeIf { it.isAfter(now) }
+        }
         for (offset in 0L..7L) {
             val day = local.toLocalDate().plusDays(offset)
             val weekday = if (day.dayOfWeek == DayOfWeek.SUNDAY) 0 else day.dayOfWeek.value
@@ -72,6 +80,8 @@ object FoundationPolicy {
 /** Main-thread audio ownership shared by foreground conversation and the optional wake service. */
 internal object VoiceAudioGate {
     private val owners = mutableSetOf<Any>()
+    var onBusy: ((Any) -> Unit)? = null
     val busy get() = owners.isNotEmpty()
-    fun set(owner: Any, active: Boolean) { if (active) owners += owner else owners -= owner }
+    fun busyExcept(owner: Any) = owners.any { it !== owner }
+    fun set(owner: Any, active: Boolean) { if (active) { owners += owner; onBusy?.invoke(owner) } else owners -= owner }
 }

@@ -6,7 +6,14 @@ internal class WakeWordLoop(
     private val create: (onResult: (String) -> Unit, onError: (Int) -> Unit) -> VoiceRecognition,
     private val onStatus: (String) -> Unit,
     private val onCommand: (String) -> Unit,
+    private val createFollowUp: ((onResult: (String) -> Unit, onError: (Int) -> Unit) -> VoiceRecognition)? = null,
+    private val createStop: ((onResult: (String) -> Unit, onError: (Int) -> Unit) -> VoiceRecognition)? = null,
+    private val onStop: () -> Unit = {},
 ) {
+    private val followUp = FollowUpWindow(now)
+    private var captureMode = "wake"
+    fun allowFollowUp() { if (enabled) { release(); followUp.renew(); commandUntil = 0; nextAttempt = now() + 200 } }
+    fun cancelFollowUp() { followUp.clear(); commandUntil = 0; if (captureMode == "follow") release() }
     private var generation = 0L
     private var recognition: VoiceRecognition? = null
     private var nextAttempt = 0L
@@ -20,13 +27,15 @@ internal class WakeWordLoop(
     var enabled = false; private set
     fun start() { stop(); transientFailures = 0; stalledStarts = 0; enabled = true; nextAttempt = now(); onStatus("Starting local microphone - preparing bundled speech") }
     private fun release() { generation++; runCatching { recognition?.close() }; recognition = null; readyAt = null; endedAt = null; finishing = false }
-    fun stop() { enabled = false; release(); commandUntil = 0; onStatus("Off") }
-    fun tick(audioBusy: Boolean) {
+    fun stop() { followUp.clear(); enabled = false; release(); commandUntil = 0; onStatus("Off") }
+    fun tick(audioBusy: Boolean, stopOnly: Boolean = false) {
         if (!enabled) return
         if (audioBusy) {
             if (recognition != null) release()
             commandUntil = 0; nextAttempt = now() + 400; onStatus("Paused - another voice session is using audio"); return
         }
+        val wanted = if (stopOnly && createStop != null) "stop" else if (followUp.active && createFollowUp != null) "follow" else "wake"
+        if (wanted != captureMode) { release(); captureMode = wanted; nextAttempt = now() }
         if (commandUntil != 0L && now() > commandUntil) commandUntil = 0
         if (recognition != null) {
             if (readyAt == null && now() - startedAt >= (recognition?.startupTimeoutMillis ?: 8_000L).coerceIn(8_000L, 60_000L)) {
@@ -49,14 +58,18 @@ internal class WakeWordLoop(
         startedAt = now(); readyAt = null; endedAt = null; finishing = false
         fun current() = enabled && token == generation
         try {
-            recognition = create({ text ->
+            val factory = when (captureMode) { "follow" -> createFollowUp!!; "stop" -> createStop!!; else -> create }
+            recognition = factory({ text ->
                 if (current()) {
                     val continuous = recognition?.continuousSession == true
                     if (!continuous) release() else { endedAt = null; finishing = false }
                     transientFailures = 0
-                    val command = if (commandUntil > now()) FoundationPolicy.wakeCommand(text) ?: text.trim().take(24_000) else FoundationPolicy.wakeCommand(text)
+                    if (StopCommandPolicy.matches(text) || (captureMode == "follow" && StopCommandPolicy.endsConversation(text))) { release(); cancelFollowUp(); nextAttempt = now() + 200; onStop(); return@factory }
+                    if (captureMode == "stop") { nextAttempt = now(); return@factory }
+                    if (captureMode == "follow" && !followUp.active) { release(); nextAttempt = now(); return@factory }
+                    val command = if (captureMode == "follow" || commandUntil > now()) FoundationPolicy.wakeCommand(text) ?: text.trim().take(24_000) else FoundationPolicy.wakeCommand(text)
                     if (command != null && command.isBlank()) { commandUntil = now() + 15_000; nextAttempt = now() + 100; onStatus("Nakama heard - say your command") }
-                    else if (!command.isNullOrBlank()) { if (continuous) release(); commandUntil = 0; nextAttempt = now() + 250; onStatus("Command heard - asking Nakama"); onCommand(command) }
+                    else if (!command.isNullOrBlank()) { if (continuous) release(); followUp.clear(); commandUntil = 0; nextAttempt = now() + 250; onStatus("Command heard - asking Nakama"); onCommand(command) }
                     else { nextAttempt = now() + 200; onStatus(if (continuous) "Microphone ready - continuous local wake listening" else "Waiting for the next local microphone session") }
                 }
             }, { error ->
@@ -70,7 +83,7 @@ internal class WakeWordLoop(
                 }
             })
             recognition?.observe(
-                { if (current()) { readyAt = now(); stalledStarts = 0; onStatus(if (commandUntil > now()) "Microphone ready - say your command" else "Microphone ready - say Hey Nakama and your request") } },
+                { if (current()) { readyAt = now(); endedAt = null; stalledStarts = 0; onStatus(if (captureMode == "stop") "Microphone ready - say Nakama stop" else if (captureMode == "follow") "Microphone ready - follow up for 30 seconds" else if (commandUntil > now()) "Microphone ready - say your command" else "Microphone ready - say Hey Nakama and your request") } },
                 { if (current()) { endedAt = now(); onStatus("Speech ended - waiting for the local final result") } },
                 { text -> if (current() && FoundationPolicy.wakeCommand(text) != null) onStatus("Wake phrase heard - finish your request") },
             )

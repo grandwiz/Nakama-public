@@ -87,3 +87,9 @@ A delivery coordinator may be waiting for approval or finish at review required 
 The normal user still talks to Nakama. Agent names and coloured desks do not grant extra account access, approve deployments, enable video spending or bypass phone permissions. Core Memory remains visible and editable context, never authority to act.
 
 For the first live team run and navigation checks, follow [the testing guide](testing-guide.md). Automated fixtures establish routing and UI behaviour; they do not establish real model quality, latency or physical-device navigation reliability.
+
+## Completed work
+
+Build 8 removes completed agents and successful completed workflow panels from the active office. Active workers and unanswered questions stay visible; recorded final replies remain available in searchable chat history.
+
+![Agent office with synthetic active work](images/windows-agent-office.png)

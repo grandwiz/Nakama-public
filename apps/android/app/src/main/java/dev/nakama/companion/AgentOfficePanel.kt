@@ -36,7 +36,7 @@ import org.json.JSONObject
 fun AgentOfficePanel(office: JSONObject?, allowed: Boolean, openProject: (String) -> Unit = {}, browserStudio: JSONObject? = null, browserAllowed: Boolean = false, browserRequest: (suspend (String, String, JSONObject?) -> JSONObject)? = null, openBrowser: (String) -> Unit = {}) {
     val motion = LocalNakamaMotion.current
     var selectedId by remember { mutableStateOf<String?>(null) }
-    var onlyActive by remember { mutableStateOf(false) }
+    var onlyActive by remember { mutableStateOf(true) }
     if (!allowed) {
         LaunchedEffect(Unit) { selectedId = null }
         Text("Connect your paired PC and enable Google and project access to see the Agent office.")
@@ -45,15 +45,8 @@ fun AgentOfficePanel(office: JSONObject?, allowed: Boolean, openProject: (String
     val supported = office?.optInt("version") == 1
     val agents = if (supported) office!!.objects("agents") else emptyList()
     val byId = agents.associateBy { it.optString("id") }
-    val terminal = setOf("completed", "failed", "stopped", "interrupted", "unavailable")
-    val active = agents.filter { it.optString("status") !in terminal }
-    val activeTree = active.map { it.optString("id") }.toMutableSet()
-    active.forEach { agent ->
-        var parent = byId[agent.optString("parentId")]
-        val visited = mutableSetOf<String>()
-        while (parent != null && visited.add(parent.optString("id"))) { activeTree += parent.optString("id"); parent = byId[parent.optString("parentId")] }
-    }
-    val visible = if (onlyActive) agents.filter { it.optString("id") in activeTree } else agents
+    val active = agents.filter { it.optString("status") !in finishedChatWork }
+    val visible = if (onlyActive) active else agents
     val sessions = if (browserAllowed) browserStudio?.objects("sessions").orEmpty().filter { it.optString("mode") != "private" && it.optString("status") != "closed" } else emptyList()
     fun browser(agent: JSONObject) = sessions.lastOrNull { item -> item.optString("taskId").isNotBlank() && item.optString("taskId") == agent.optString("taskId") || item.optString("workflowId").isNotBlank() && item.optString("workflowId") == agent.optString("workflowId") }
     val previewAgents = visible.filter { browser(it) != null }.distinctBy { browser(it)?.optString("id") }.take(4).map { it.optString("id") }.toSet()
@@ -65,8 +58,8 @@ fun AgentOfficePanel(office: JSONObject?, allowed: Boolean, openProject: (String
                 Text("Green · GPT   Orange · Claude", style = MaterialTheme.typography.labelMedium)
                 Text("Tap an agent to inspect recorded work and its reporting line. Desks show saved host activity, not live thoughts or a promise that a model is running.", style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !onlyActive, onClick = { onlyActive = false }, label = { Text("All ${agents.size}") })
                     FilterChip(selected = onlyActive, onClick = { onlyActive = true }, label = { Text("Unfinished ${active.size}") })
+                    FilterChip(selected = !onlyActive, onClick = { onlyActive = false }, label = { Text("Including history ${agents.size}") })
                 }
                 if (!supported) Text("This host has not supplied a supported Agent office snapshot yet. Refresh or update Control Center.")
                 else if (visible.isEmpty()) Text(if (onlyActive) "No active agents in the latest host snapshot." else "The office is quiet. Real agent desks appear after you request work.")

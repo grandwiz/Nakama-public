@@ -22,6 +22,7 @@ data class ActionResult(val status: String, val message: String, val data: JSONO
 class PhoneActions(private val activity: Activity) {
     fun execute(action: JSONObject): ActionResult {
         val args = action.optJSONObject("args") ?: JSONObject()
+        if (activity.getSystemService(android.app.KeyguardManager::class.java).isDeviceLocked && action.optString("type") !in setOf("contacts_search", "timer_start")) return ActionResult("needs_user", "Unlock your device to carry out that on-screen phone action.")
         return try {
             when (action.getString("type")) {
                 "call" -> call(args)

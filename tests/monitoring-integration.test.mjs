@@ -90,7 +90,7 @@ test("host monitoring and upgrade requests remain local, privacy gated and curre
   );
   assert.equal(calls(), 0);
 });
-test("direct stock navigation creates paused locale-independent monitor without provider calls", async (t) => {
+test("direct stock request starts a locale-independent monitor without provider calls", async (t) => {
   const { host, calls } = await fixture(t);
   const result = await host.localAssistant.handle(
     { message: "monitor https://shop.example/fr/produit for restock" },
@@ -100,7 +100,7 @@ test("direct stock navigation creates paused locale-independent monitor without 
   const [row] = host.monitoring.list(OWNER).monitors;
   assert.equal(result.outcome.monitorId, row.id);
   assert.deepEqual(row.condition, { type: "stock" });
-  assert.equal(row.status, "paused");
+  assert.equal(row.status, "active");
   assert.equal(calls(), 0);
   assert.equal(row.profileId, undefined);
   const response = await host.localAssistant.handle(

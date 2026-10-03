@@ -3,11 +3,15 @@
 
 Nakama is a Windows and Android personal assistant with configurable ChatGPT and Claude roles, local personal tools and a managed development team. Source is available under the [MIT license](LICENSE). Users run their own host and connect their own eligible accounts; no accounts, credentials, provider allowance or signing keys are bundled.
 
-**Source-only engineering preview.** This repository starts with a reviewed clean source snapshot. It contains no private development history, installed profiles, screenshots, generated reports, filled personal checklists or application binaries. It is not a production-release or universal-autonomy claim. Read [current capabilities](docs/implementation-status.md), [verification](docs/verification.md), [security](docs/security.md) and [release signing](docs/release-signing.md).
+**Source-only engineering preview.** This repository starts with a reviewed clean source snapshot. It contains no private development history, installed profiles, private screenshots, generated reports, filled personal checklists or application binaries. It is not a production-release or universal-autonomy claim. Read [current capabilities](docs/implementation-status.md), [verification](docs/verification.md), [security](docs/security.md) and [release signing](docs/release-signing.md).
 
 ## What it does
 
-- Local tasks, routines, a built-in clock and timers, editable memory, learned methods and direct navigation.
+- Host-managed alarms that ring on the requesting Android, local clocks and timers, installed-app launch, and website monitoring. Spoken requests can find a reusable online sound and turn it into an alarm clip.
+- Locked-screen wake listening, follow-up conversation, local “Nakama stop”, and offline English speech recognition.
+- Six-hour chat rotation, searchable originals and bounded local memory; completed work leaves Chat and Agent office.
+- Existing local project imports from Windows or Android, and guided private-VPN access away from home.
+- Editable memory, learned methods and direct navigation.
 - Configurable manager, planners, developer and two independent reviewers; questions return through the manager. Local commands/checks and consequential operations retain their approval boundaries.
 - Projects, selected-file Git changes, scoped service adapters, local preview checks and reports with honest unverified outcomes.
 - Private browser handoffs; agents cannot read private sessions. Paired Android devices receive only permitted shared data.
@@ -19,6 +23,16 @@ Monitoring defaults to a configurable 60-second interval without AI calls per po
 Dynamic upgrade does not silently rewrite the running application or start provider work. Actual approved checks and both independent reviews precede signed-package approval. Installed health and automatic rollback are unfinished. The unsigned/debug development builds cannot qualify as production releases. See [Dynamic upgrade](docs/dynamic-upgrade.md).
 
 General computer/browser/app autonomy is the direction. Unrestricted app input, broad authenticated forms and fully autonomous website delivery remain unfinished. Synthetic tests do not establish live provider eligibility, merchant compatibility, physical-device reliability or performance.
+
+## In the apps
+
+These screenshots use disposable demo data. No personal accounts or conversations are shown.
+
+| Windows Control Center | Android companion |
+| --- | --- |
+| ![Windows Assistant with message timestamps](docs/images/windows-assistant.png) | <img src="docs/images/android-chat.png" alt="Android chat with timestamp controls" width="330" /> |
+
+See [chat memory](docs/chat-memory.md), [project import](docs/project-import.md), [away-from-home setup](docs/remote-access.md) and [Claude usage](docs/claude-usage.md). Both the Windows host and Android companion need the build 8 update. Physical microphone, alarm volume and mobile-network acceptance still belong to your installation.
 
 ## Build from source
 
@@ -41,7 +55,7 @@ For Android build commands and limitations, read [Android verification](apps/and
 
 1. Choose a dedicated workspace in Windows Control Center. Keep the host awake when using it from a phone.
 2. Check saved model roles and connect eligible accounts through the providers' official authentication flows. Subscriptions, hosting, domains and optional services may cost money; there is no automatic paid fallback.
-3. Enable the private-network listener deliberately and pair each trusted phone separately. Android pins the host certificate. Do not expose the host directly to the public internet.
+3. Use the [guided private VPN setup](docs/remote-access.md) for mobile-data access, or enable the private-network listener deliberately for home use. Pair each trusted phone separately. Android pins the host certificate. Do not expose the host directly to the public internet.
 4. On Android, follow [the wake-word setup steps](docs/android-guide.md#optional-local-nakama-wake-word), including first-use model preparation, the visible **Microphone ready** status and battery settings. Start with “Hey Nakama, what time is it?” Microphone permission alone does not enable wake listening.
 5. Try local commands such as “add task check my Nakama setup”. Then follow the [testing guide](docs/testing-guide.md).
 
@@ -53,6 +67,10 @@ Kling is optional and disabled by default. Every generation requires a separate 
 | --- | --- |
 | Installation and pairing | [Quick start](docs/quick-start.md) |
 | Android wake word and voice setup | [Device-by-device instructions](docs/android-guide.md#optional-local-nakama-wake-word) |
+| Chat cleanup and history | [Chat memory](docs/chat-memory.md) |
+| Existing local projects | [Import from Windows or Android](docs/project-import.md) |
+| Away from home | [Private VPN setup](docs/remote-access.md) |
+| Claude subscription usage | [Usage and sign-in repair](docs/claude-usage.md) |
 | Clock and timers | [Built-in clock](docs/clock.md) |
 | Team roles and development | [Project workflow](docs/project-workflow.md) |
 | General task coordination | [Autonomous tasks](docs/autonomous-tasks.md) |

@@ -15,6 +15,7 @@ internal class WakeConversation(
     private val needsForeground: () -> Unit,
     private val observe: suspend (JSONObject) -> Unit = {},
     private val pause: suspend (Long) -> Unit = { delay(it) },
+    private val receiptFeedback: suspend (JSONObject, JSONObject) -> String? = { _, _ -> null },
 ) {
     private suspend fun snapshot(): JSONObject {
         check(current()) { "Wake conversation stopped. Open Nakama to continue." }
@@ -23,6 +24,16 @@ internal class WakeConversation(
         check(WakeConversationAccess.allowed(snapshot, deviceId)) { "Connect your PC and enable this phone's access before asking Nakama." }
         observe(snapshot)
         return snapshot
+    }
+    private suspend fun receipts(state: JSONObject, taskIds: Collection<String>, workflowId: String): JSONObject {
+        if (taskIds.isEmpty() && workflowId.isBlank()) return state
+        check(current()) { "The wake session changed before checking accepted replies." }
+        val result = request("POST", "/api/chats/receipts", JSONObject()
+            .put("taskIds", org.json.JSONArray(taskIds.take(50)))
+            .put("workflowIds", org.json.JSONArray(listOf(workflowId).filter { it.isNotBlank() })))
+        val fresh = snapshot() // Permissions and pairing may change during archive retrieval.
+        val merged = (fresh.objects("messages") + result.objects("messages")).distinctBy { it.optString("id") }.filter { DeviceDelivery.addressedTo(it, deviceId) }
+        return JSONObject(fresh.toString()).put("messages", org.json.JSONArray(merged))
     }
     suspend fun run(command: String) {
         snapshot()
@@ -41,12 +52,15 @@ internal class WakeConversation(
         val workflowId = response.optString("workflowId")
         var workflowPending = workflowId.isNotBlank()
         val spokenMessages = response.optJSONArray("spokenMessageIds")?.let { values -> (0 until values.length()).map { values.optString(it) }.toMutableSet() } ?: mutableSetOf()
-        response.optString("reply").takeIf { it.isNotBlank() }?.let { speak(it) }
+        val feedback = receiptFeedback(response, state)
+        check(current()) { "The wake session changed before reply playback." }
+        listOfNotNull(response.optString("reply").takeIf { it.isNotBlank() }, feedback).joinToString(" ").takeIf { it.isNotBlank() }?.let { speak(it) }
         if (response.optJSONObject("outcome")?.optString("type") == "navigate" || response.optString("intakeId").isNotBlank()) needsForeground()
         repeat(180) { attempt ->
             check(current()) { "The wake session ended." }
             val projectAllowed = state.objects("devices").firstOrNull { it.optString("id") == deviceId }?.optJSONObject("permissions")?.opt("projectAccess") != false
             if (workflowPending && !projectAllowed) throw IllegalStateException("Project access changed. Open Nakama to review your permissions.")
+            state = receipts(state, taskIds, if (workflowPending) workflowId else "")
             val messages = state.objects("messages").filter { it.optString("role") == "assistant" && DeviceDelivery.addressedTo(it, deviceId) }
             val workflow = state.objects("projectWorkflows").firstOrNull { it.optString("id") == workflowId && DeviceDelivery.addressedTo(it, deviceId) }
             val latestQuestion = messages.lastOrNull { it.optString("workflowId") == workflowId && it.optString("kind") == "project_questions" }
@@ -56,7 +70,7 @@ internal class WakeConversation(
                         (message.optString("kind") == "project_delivery" || (message === latestQuestion && workflow?.optString("status") == "awaiting_answers"))))
             }
             for (reply in replies) {
-                state = snapshot()
+                state = receipts(snapshot(), taskIds, if (workflowPending) workflowId else "")
                 check(WakeConversationAccess.allowed(state, deviceId)) { "Access changed before reply playback." }
                 val freshReply = state.objects("messages").firstOrNull { it.optString("role") == "assistant" && DeviceDelivery.addressedTo(it, deviceId) && it.optString("id") == reply.optString("id") }
                 freshReply?.optString("content")?.takeIf { it.isNotBlank() }?.let { speak(it) }

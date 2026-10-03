@@ -34,6 +34,7 @@
     },
     "files": [
       "apps/desktop/main.cjs",
+      "apps/desktop/alarm-audio.cjs",
       "apps/desktop/preload.cjs",
       "apps/desktop/remote-*",
       "apps/desktop/browser-*.cjs",

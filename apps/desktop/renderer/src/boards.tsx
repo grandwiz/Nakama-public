@@ -19,6 +19,7 @@ import {
   Toggle,
 } from "./components";
 import { useNakama } from "./context";
+import { openExternal } from "./bridge";
 import type { Routine } from "./foundations-types";
 import { AutonomousTasksPanel } from "./autonomous-tasks";
 import "./foundations.css";
@@ -274,6 +275,8 @@ function RoutinesBoard() {
     Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const [weekdays, setWeekdays] = useState([1, 2, 3, 4, 5]);
+  const [scheduleMode, setScheduleMode] = useState<"once" | "repeat">("repeat");
+  const [scheduledDate, setScheduledDate] = useState("");
   const [kind, setKind] = useState<Routine["kind"]>("reminder");
   const [targetDeviceIds, setTargetDeviceIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -300,6 +303,8 @@ function RoutinesBoard() {
     setDetails("");
     setTime("07:00");
     setWeekdays([1, 2, 3, 4, 5]);
+    setScheduleMode("repeat");
+    setScheduledDate("");
     setKind("reminder");
     setTargetDeviceIds([]);
   }
@@ -336,9 +341,12 @@ function RoutinesBoard() {
             </div>
             <h3>{routine.title}</h3>
             {routine.details && <p>{routine.details}</p>}
+            {routine.soundId && <AlarmSoundCredit soundId={routine.soundId} />}
             <p className="small-copy">
-              {routine.weekdays.map((day) => days[day]).join(" · ")} ·{" "}
-              {routine.timeZone}
+              {routine.scheduledDate
+                ? `Once · ${routine.scheduledDate}`
+                : routine.weekdays.map((day) => days[day]).join(" · ")}{" "}
+              · {routine.timeZone}
             </p>
             <p className="small-copy">
               {routine.kind === "alarm" ? "Alarm" : "Reminder"}
@@ -387,7 +395,13 @@ function RoutinesBoard() {
                   setDetails(routine.details || "");
                   setTime(routine.time);
                   setTimeZone(routine.timeZone);
-                  setWeekdays(routine.weekdays);
+                  setWeekdays(
+                    routine.weekdays.length
+                      ? routine.weekdays
+                      : [1, 2, 3, 4, 5],
+                  );
+                  setScheduleMode(routine.scheduledDate ? "once" : "repeat");
+                  setScheduledDate(routine.scheduledDate || "");
                   setKind(routine.kind);
                   setTargetDeviceIds(routineTargets(routine));
                 }}
@@ -425,6 +439,7 @@ function RoutinesBoard() {
             if (
               busy ||
               invalidTargets ||
+              (scheduleMode === "once" ? !scheduledDate : !weekdays.length) ||
               (kind === "alarm" && !targetDeviceIds.length)
             )
               return;
@@ -437,7 +452,8 @@ function RoutinesBoard() {
                 kind,
                 time,
                 timeZone,
-                weekdays,
+                scheduledDate: scheduleMode === "once" ? scheduledDate : null,
+                weekdays: scheduleMode === "once" ? [] : weekdays,
                 targetDeviceIds,
                 ...(!editing ? { enabled: true } : {}),
               },
@@ -482,10 +498,12 @@ function RoutinesBoard() {
                 value={kind}
                 onChange={(event) => {
                   setKind(event.target.value as Routine["kind"]);
-                  if (event.target.value === "alarm")
+                  if (event.target.value === "alarm") {
+                    if (!editing) setScheduleMode("once");
                     setTargetDeviceIds((current) =>
                       current.filter((id) => id !== "desktop"),
                     );
+                  }
                 }}
               >
                 <option value="reminder">Reminder</option>
@@ -502,26 +520,51 @@ function RoutinesBoard() {
               placeholder="Europe/London"
             />
           </label>
-          <fieldset className="routine-days">
-            <legend>Repeat on</legend>
-            {days.map((day, index) => (
-              <button
-                type="button"
-                key={day}
-                aria-pressed={weekdays.includes(index)}
-                className={weekdays.includes(index) ? "selected" : ""}
-                onClick={() =>
-                  setWeekdays((current) =>
-                    current.includes(index)
-                      ? current.filter((value) => value !== index)
-                      : [...current, index].sort(),
-                  )
-                }
-              >
-                {day}
-              </button>
-            ))}
-          </fieldset>
+          <label className="field">
+            Schedule
+            <select
+              aria-label="Routine schedule"
+              value={scheduleMode}
+              onChange={(event) =>
+                setScheduleMode(event.target.value as "once" | "repeat")
+              }
+            >
+              <option value="once">Once on a date</option>
+              <option value="repeat">Repeat weekly</option>
+            </select>
+          </label>
+          {scheduleMode === "once" ? (
+            <label className="field">
+              Date in {timeZone || "the selected time zone"}
+              <input
+                required
+                type="date"
+                value={scheduledDate}
+                onChange={(event) => setScheduledDate(event.target.value)}
+              />
+            </label>
+          ) : (
+            <fieldset className="routine-days">
+              <legend>Repeat on</legend>
+              {days.map((day, index) => (
+                <button
+                  type="button"
+                  key={day}
+                  aria-pressed={weekdays.includes(index)}
+                  className={weekdays.includes(index) ? "selected" : ""}
+                  onClick={() =>
+                    setWeekdays((current) =>
+                      current.includes(index)
+                        ? current.filter((value) => value !== index)
+                        : [...current, index].sort(),
+                    )
+                  }
+                >
+                  {day}
+                </button>
+              ))}
+            </fieldset>
+          )}
           <fieldset className="routine-targets" disabled={busy}>
             <legend>
               {kind === "alarm"
@@ -623,7 +666,7 @@ function RoutinesBoard() {
               busy={busy}
               disabled={
                 !title.trim() ||
-                !weekdays.length ||
+                (scheduleMode === "once" ? !scheduledDate : !weekdays.length) ||
                 invalidTargets ||
                 (kind === "alarm" && !targetDeviceIds.length)
               }
@@ -640,4 +683,15 @@ function RoutinesBoard() {
       </section>
     </div>
   );
+}
+
+function AlarmSoundCredit({ soundId }: { soundId: string }) {
+  const { state } = useNakama();
+  const sound = state.alarmSounds?.find(item => item.id === soundId);
+  if (!sound) return <p className="small-copy">Selected alarm sound is unavailable. Refresh the host connection.</p>;
+  return <div className="small-copy" aria-label="Alarm sound credit">
+    <strong>{sound.name}</strong> · {Math.round(sound.durationMs / 1000)} seconds
+    <p>{sound.sourceTitle} · {sound.attribution || "See source for attribution"} · {sound.license}. Clipped and converted to mono WAV by Nakama.</p>
+    <Button kind="ghost" onClick={() => void openExternal(sound.sourceUrl)}>Sound source and license</Button>
+  </div>;
 }

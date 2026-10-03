@@ -19,7 +19,7 @@ const desk = (id, status = "running", parentId) => ({
 });
 const flatten = (roots) =>
   roots.flatMap((node) => [node.agent.id, ...flatten(node.children)]);
-test("current office retains a finished parent of a current child without including unrelated history", () => {
+test("current office hides finished desks while retaining their active children", () => {
   const agents = [
     desk("manager", "completed"),
     desk("worker", "queued", "manager"),
@@ -27,8 +27,8 @@ test("current office retains a finished parent of a current child without includ
   ];
   const before = structuredClone(agents);
   const roots = officeForest(agents, false);
-  assert.deepEqual(flatten(roots), ["manager", "worker"]);
-  assert.equal(roots[0].children[0].agent.parentId, "manager");
+  assert.deepEqual(flatten(roots), ["worker"]);
+  assert.equal(roots[0].agent.parentId, "manager");
   assert.deepEqual(agents, before);
 });
 test("history includes completed failed interrupted and unavailable receipts", () => {

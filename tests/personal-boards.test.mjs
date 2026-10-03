@@ -7,6 +7,7 @@ import { NakamaHost } from "../apps/host/host.mjs";
 import {
   calendarDay,
   latestDueOccurrence,
+  nextScheduledDate,
   zonedOccurrence,
 } from "../apps/host/personal-boards.mjs";
 
@@ -429,7 +430,7 @@ test("normal voice and chat requests execute locally with truthful receipts and 
   await chat(f.host, "Delete routine stretch", p);
   assert.equal(f.host.store.state.routineBoard.routines.length, 0);
   const alarm = await chat(f.host, "Set a morning alarm for 7 am", p);
-  assert.match(alarm.reply, /must still confirm/);
+  assert.match(alarm.reply, /Waiting for the selected Android device to confirm scheduling/);
   assert.equal(alarm.outcome.type, "routine_created");
   assert.match(
     (await chat(f.host, "What are you working on", p)).reply,
@@ -619,4 +620,94 @@ test("location replies stay scoped to their phone and never enter unrelated prov
     await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(f.calls.length, 1);
   assert.doesNotMatch(f.calls[0].options.prompt, /12\.34567|76\.54321/);
+});
+
+
+test("one-shot next dates respect destination time zones and daylight-saving gaps", () => {
+  assert.equal(nextScheduledDate("07:00", "Europe/London", new Date("2026-10-02T05:59:00Z")), "2026-10-02");
+  assert.equal(nextScheduledDate("07:00", "Europe/London", new Date("2026-10-02T06:00:00Z")), "2026-10-03");
+  assert.equal(nextScheduledDate("01:00", "Asia/Tokyo", new Date("2026-10-02T18:00:00Z")), "2026-10-04");
+  assert.equal(nextScheduledDate("01:30", "Europe/London", new Date("2026-03-29T00:45:00Z")), "2026-03-30");
+  assert.equal(nextScheduledDate("01:30", "Europe/London", new Date("2026-10-25T00:45:00Z")), "2026-10-26");
+  for (const [time, zone] of [["24:00", "UTC"], ["7:00", "UTC"], ["07:00", "Not/AZone"], ["07:00", ""]])
+    assert.throws(() => nextScheduledDate(time, zone), { status: 400 });
+});
+
+test("one-shot dates reject impossible calendars and local times while recurring schedules require weekdays", async (t) => {
+  const f = await fixture(t);
+  for (const patch of [
+    { scheduledDate: "2026-02-29" }, { scheduledDate: "2026-04-31" },
+    { scheduledDate: "2026-13-01" }, { scheduledDate: "2026-1-01" },
+    { scheduledDate: "2026-10-02T07:00:00Z" }, { scheduledDate: "0000-01-01" },
+    { scheduledDate: "" }, { scheduledDate: 20261002 },
+    { scheduledDate: "2026-03-29", time: "01:30" },
+    { scheduledDate: "2026-10-02", weekdays: [1, 1] },
+    { scheduledDate: null, weekdays: [] },
+    { scheduledDate: "2026-10-02", timeZone: "" },
+    { scheduledDate: "2026-10-02", timeZone: false },
+  ])
+    await assert.rejects(f.host.dispatch("POST", "/api/routines", routine(patch)), { status: 400 });
+  const leap = await f.host.dispatch("POST", "/api/routines", routine({ scheduledDate: "2028-02-29", weekdays: [] }));
+  assert.equal(leap.scheduledDate, "2028-02-29");
+  assert.deepEqual(leap.weekdays, []);
+});
+
+test("a dated alarm stays on its origin device, persists and becomes due only once across restart and delayed ticks", async (t) => {
+  const f = await fixture(t),
+    origin = await phone(f.host, "Alarm origin"),
+    other = await phone(f.host, "Other device"),
+    body = routine({ kind: "alarm", scheduledDate: "2026-10-02", requestId: "one-shot-request-001" });
+  delete body.weekdays;
+  const saved = await f.host.dispatch("POST", "/api/routines", body, origin),
+    replay = await f.host.dispatch("POST", "/api/routines", body, origin);
+  assert.equal(replay.id, saved.id);
+  assert.deepEqual(saved.targetDeviceIds, [origin.id]);
+  assert.deepEqual(saved.weekdays, []);
+  await assert.rejects(f.host.dispatch("POST", "/api/routines", { ...body, scheduledDate: "2026-10-03" }, origin), { status: 409 });
+  assert.equal(latestDueOccurrence(saved, new Date("2026-10-02T05:59:00Z")), null);
+  await f.restart();
+  f.date("2026-10-20T08:00:00Z");
+  await Promise.all([f.host.boards.tick(), f.host.boards.tick()]);
+  const receipts = f.host.store.state.routineBoard.occurrences;
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].scheduledFor, "2026-10-02T06:00:00.000Z");
+  assert.equal(receipts[0].targetDeviceId, origin.id);
+  assert.equal((await f.host.dispatch("GET", "/api/routines", {}, other)).routines.length, 0);
+  assert.equal((await f.host.dispatch("GET", "/api/routines", {}, other)).occurrences.length, 0);
+  f.date("2026-11-02T08:00:00Z");
+  await f.restart();
+  await f.host.boards.tick();
+  assert.equal(f.host.store.state.routineBoard.occurrences.length, 1);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.host.store.state.actions.length, 0);
+});
+
+test("editing a dated alarm resets every target receipt and explicit date clearing restores weekday recurrence", async (t) => {
+  const f = await fixture(t),
+    origin = await phone(f.host, "Alarm origin"),
+    other = await phone(f.host, "Other target"),
+    saved = await f.host.dispatch("POST", "/api/routines", routine({
+      kind: "alarm", scheduledDate: "2026-10-02", weekdays: [],
+      targetDeviceId: undefined, targetDeviceIds: [origin.id, other.id],
+    }), origin);
+  for (const target of [origin, other])
+    await f.host.dispatch("POST", `/api/routines/${saved.id}/device-status`, { status: "scheduled", expectedUpdatedAt: saved.updatedAt }, target);
+  await assert.rejects(f.host.dispatch("PATCH", `/api/routines/${saved.id}`, { scheduledDate: "2026-10-03" }, other), { status: 403 });
+  const renamed = await f.host.dispatch("PATCH", `/api/routines/${saved.id}`, { title: "Still once" }, origin);
+  assert.equal(renamed.scheduledDate, "2026-10-02");
+  assert.equal(Object.keys(renamed.deviceSchedules).length, 2);
+  const changed = await f.host.dispatch("PATCH", `/api/routines/${saved.id}`, { scheduledDate: "2026-10-03" }, origin);
+  assert.equal(changed.deviceSchedules, undefined);
+  assert.equal(changed.deviceSchedule, undefined);
+  assert.equal(changed.scheduleUpdatedAt, changed.updatedAt);
+  assert.notEqual(changed.scheduleUpdatedAt, saved.scheduleUpdatedAt);
+  for (const target of [origin, other])
+    await assert.rejects(f.host.dispatch("POST", `/api/routines/${saved.id}/device-status`, { status: "scheduled", expectedUpdatedAt: saved.updatedAt }, target), { status: 409 });
+  await assert.rejects(f.host.dispatch("PATCH", `/api/routines/${saved.id}`, { scheduledDate: null }, origin), { status: 400 });
+  const recurring = await f.host.dispatch("PATCH", `/api/routines/${saved.id}`, { scheduledDate: null, weekdays: [1] }, origin);
+  assert.equal(recurring.scheduledDate, null);
+  assert.deepEqual(recurring.weekdays, [1]);
+  assert.equal(latestDueOccurrence(recurring, new Date("2026-10-05T08:00:00Z")), "2026-10-05T06:00:00.000Z");
+  await f.host.dispatch("PATCH", `/api/devices/${other.id}`, { projectAccess: false });
+  await assert.rejects(f.host.dispatch("PATCH", `/api/routines/${saved.id}`, { scheduledDate: "2026-10-06" }, origin), { status: 403 });
 });

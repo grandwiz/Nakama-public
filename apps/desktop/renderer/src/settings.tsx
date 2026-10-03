@@ -1,3 +1,4 @@
+import { RemoteConnectionSetup } from "./remote-connection";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -109,8 +110,8 @@ export function DevicesPage() {
         const candidates = result.addresses.filter(
           (item) => !/virtual|vethernet|docker|wsl|vmware/i.test(item.name),
         );
-        if (candidates.length === 1)
-          setHostUrl((current) => current || candidates[0].url);
+        const preferred = candidates.find(item => item.kind === "vpn" && item.listening) || (candidates.length === 1 ? candidates[0] : undefined);
+        if (preferred) setHostUrl(current => current || preferred.url);
       })
       .catch(() => {
         if (!active) return;
@@ -130,6 +131,7 @@ export function DevicesPage() {
     platform,
     networkRefresh,
     state.config.allowLan,
+    state.config.vpnOnly,
     state.config.port,
   ]);
   const createTicket = async (event: React.FormEvent) => {
@@ -228,6 +230,7 @@ export function DevicesPage() {
           </div>
         </div>
       </section>
+      <RemoteConnectionSetup />
       <SectionTitle
         title="Paired devices"
         description={`${state.devices.length} ${state.devices.length === 1 ? "device has" : "devices have"} access to this Control Center.`}
@@ -996,19 +999,19 @@ export function SettingsPage() {
           <p>Bring your workspace with you using a private network.</p>
         </div>
         <div className="settings-section-body">
-          <Toggle
-            checked={state.config.allowLan}
-            onChange={(value) =>
-              void perform(
-                "PATCH",
-                "/api/settings",
-                { allowLan: value },
-                "Listener preference saved. Restart the Windows app to apply network changes.",
-              )
-            }
-            label="Allow paired devices over a private network"
-            description="Listen for connections outside this PC. A device key is still required. Restart the app after changing this."
-          />
+          <label className="field">
+            Allow paired devices over a private network
+            <select
+              aria-label="Allow paired devices over a private network"
+              value={state.config.vpnOnly ? "vpn" : state.config.allowLan ? "lan" : "local"}
+              onChange={(event) => void perform("PATCH", "/api/settings", { vpnOnly: event.target.value === "vpn", allowLan: event.target.value === "lan" }, "Listener preference saved. Fully quit and reopen Control Center.")}
+            >
+              <option value="local">This PC only</option>
+              <option value="vpn">Private VPN only (Tailscale)</option>
+              <option value="lan">Home LAN / private network</option>
+            </select>
+            <span>VPN mode listens only on Tailscale. Home LAN mode listens on network interfaces. Every device still needs its paired key. Fully quit and reopen after changing this.</span>
+          </label>
           <div className="connection-facts">
             <div>
               <span>Transport</span>

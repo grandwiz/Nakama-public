@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   networkStatus,
+  hostBindAddress,
   privateIpv4Kind,
 } from "../apps/host/network-status.mjs";
 import { NakamaHost } from "../apps/host/host.mjs";
@@ -195,4 +196,16 @@ test("network diagnostics are owner-only, read-only and report a real loopback l
     (error) => error.status === 401,
   );
   assert.equal(host.tickets.size, 0);
+});
+
+
+test("VPN-only binding never widens to LAN or unrelated CGNAT adapters", () => {
+  assert.equal(hostBindAddress({ vpnOnly:true, allowLan:true }, interfaces), "100.100.5.7");
+  assert.equal(hostBindAddress({ vpnOnly:true, allowLan:true }, { Mobile:[{address:"100.65.1.2",internal:false}] }), "127.0.0.1");
+  assert.equal(hostBindAddress({ vpnOnly:true }, {}), "127.0.0.1");
+  const status = networkStatus({ config:{...config,vpnOnly:true}, listener:{address:"0.0.0.0",port:43110}, interfaces });
+  assert.equal(status.restartNeeded,true);
+  const ready = networkStatus({ config:{...config,vpnOnly:true}, listener:{address:"100.100.5.7",port:43110}, interfaces });
+  assert.equal(ready.restartNeeded,false);
+  assert.deepEqual(ready.addresses.filter(row=>row.listening).map(row=>row.address),["100.100.5.7"]);
 });

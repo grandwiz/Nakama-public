@@ -118,10 +118,13 @@ tasks.register("prepareBundledSpeechModel") {
         val keywords = File(modelRoot, "wake/keywords.txt")
         project.file("src/main/speech-config/wake-keywords.txt").copyTo(keywords)
         record("wake/keywords.txt", keywords)
+        val stopKeywords = File(modelRoot, "wake/stop-keywords.txt")
+        project.file("src/main/speech-config/stop-keywords.txt").copyTo(stopKeywords)
+        record("wake/stop-keywords.txt", stopKeywords)
         val vadTarget = File(modelRoot, "silero_vad.onnx")
         vad.copyTo(vadTarget); record("silero_vad.onnx", vadTarget)
         File(output, "speech-model/manifest.json").writeText(JsonOutput.prettyPrint(JsonOutput.toJson(mapOf(
-            "id" to "nakama-speech-base-en-kws-v2", "sourceRevision" to modelRevision, "source" to modelUrl,
+            "id" to "nakama-speech-base-en-kws-v3", "sourceRevision" to modelRevision, "source" to modelUrl,
             "license" to "MIT (Whisper, Silero); Apache-2.0 (KWS)", "files" to records.sortedBy { it["path"].toString() }
         ))) + "\n")
         project.copy { from(project.file("src/main/speech-notices")); into(File(output, "speech-model/notices")) }
@@ -133,7 +136,7 @@ tasks.register("prepareBundledSpeechModel") {
 // Never copied into the application APK; missing fixtures fail the explicit native corpus test.
 val speechTestAudio = rootProject.projectDir.resolve("../../.cache/bundled-speech/audio")
 val prepareSpeechTestAudio = tasks.register<Sync>("prepareBundledSpeechTestAudio") {
-    from(speechTestAudio) { include("*.wav", "manifest.json", "kws-extra/*.wav", "kws-extra/manifest.json", "kws-trimmed/*.wav", "kws-trimmed/manifest.json", "wake-handover/*.wav", "wake-handover/manifest.json") }
+    from(speechTestAudio) { include("voice-session/*.wav", "voice-session/manifest.json", "*.wav", "manifest.json", "kws-extra/*.wav", "kws-extra/manifest.json", "kws-trimmed/*.wav", "kws-trimmed/manifest.json", "wake-handover/*.wav", "wake-handover/manifest.json") }
     into(layout.buildDirectory.dir("generated/speechTestAssets/speech-fixtures"))
     onlyIf { speechTestAudio.isDirectory }
 }

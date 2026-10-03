@@ -19,7 +19,9 @@ A remote app or timer requires a currently connected, permitted target. App comm
 
 ## Alarms on one or several devices
 
-Open **My clipboard → Routines board** on Windows or **Tools → Routines** on Android. Select **Alarm**, enter the time, repeat days and timezone, and choose each phone/tablet that should ring. Android initially selects the device you are holding; the PC requires you to select a destination. Use a Reminder for a PC notification: this preview has no Windows wake-from-sleep alarm service.
+Open **My clipboard → Routines board** on Windows or **Tools → Routines** on Android. Select **Alarm**, enter the time, one-time date or repeat days, and timezone, and choose each phone/tablet that should ring. Android initially selects the device you are holding; the PC requires you to select a destination. Use a Reminder for a PC notification: this preview has no Windows wake-from-sleep alarm service.
+
+Chat alarms default to a single occurrence; a repeat requires an explicit instruction. The host owns the saved alarm, and each assigned Android schedules its own occurrence after permission and sync. A bare **“Set an alarm”** asks for a time and accepts a short answer on that same device.
 
 You can also say **“Set a morning alarm at 7 am on Kitchen tablet”** or **“Set a morning alarm at 7 am on My phone and Kitchen tablet”**. Use the picker if names are ambiguous. Selected alarm devices can be offline while the saved change waits for their next sync. Each destination has its own scheduling receipt. One device reporting **scheduled** does not establish that the other device is ready.
 

@@ -5982,3 +5982,21 @@ body {
 .workflow-heading strong { flex: 1; }
 .workflow-questions { display: grid; gap: 12px; padding: 12px 0; }
 .workflow-plan { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font: inherit; font-size: 13px; }
+
+.chat-transcript { position: relative; flex: 1; min-height: 0; display: flex; }
+.chat-transcript > .chat-messages { width: 100%; }
+.chat-latest { position: absolute; left: 18px; bottom: 14px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); color: var(--text); padding: 10px 14px; box-shadow: 0 3px 14px #122e6126; font-size: 12px; z-index: 1; }
+.message-text-button { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; padding: 0; font: inherit; white-space: pre-wrap; user-select: text; }
+.message-text-button:focus-visible, .chat-latest:focus-visible { outline: 2px solid var(--accent, #537da8); outline-offset: 4px; }
+.message-exact-time { display: block; margin-top: 8px; font-size: 11px; color: var(--muted); }
+
+.chat-history-controls { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--border); }
+.chat-archive-layout { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(250px, 2fr); gap: 16px; min-height: 300px; }
+.chat-archive-list, .chat-archive-detail { max-height: 60vh; overflow: auto; padding: 4px; }
+.chat-archive-list > button { display: block; width: 100%; text-align: left; padding: 12px; margin-bottom: 8px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; }
+.chat-archive-list > button[aria-pressed="true"] { border-color: #537da8; }
+.chat-archive-list span { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.chat-archive-list p { margin: 7px 0 0; max-height: 4.5em; overflow: hidden; white-space: pre-wrap; }
+.archive-message { padding: 14px; margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.archive-message > strong { display: block; margin-bottom: 8px; }
+@media (max-width: 650px) { .chat-archive-layout { grid-template-columns: 1fr; } .chat-archive-list { max-height: 25vh; } }
